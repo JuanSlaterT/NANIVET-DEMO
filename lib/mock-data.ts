@@ -248,9 +248,9 @@ export const encuestas: Encuesta[] = [
 
 // ==================== HOSPITALIZACIONES (2 activas + 1 alta) ====================
 export const hospitalizaciones: Hospitalizacion[] = [
-  { id: 'hos_001', mascotaId: 'mas_020', casoId: 'cas_006', veterinarioId: 'vet_002', fechaIngreso: '2026-10-14T08:00:00', fechaAlta: null, jaulaArea: 'A-01', motivo: 'Post-operatorio OVH - observación 24h', estado: 'hospitalizado' },
-  { id: 'hos_002', mascotaId: 'mas_004', casoId: 'cas_009', veterinarioId: 'vet_001', fechaIngreso: '2026-10-15T07:00:00', fechaAlta: null, jaulaArea: 'B-03', motivo: 'Gastroenteritis aguda - fluidos IV', estado: 'hospitalizado' },
-  { id: 'hos_003', mascotaId: 'mas_013', casoId: 'cas_005', veterinarioId: 'vet_001', fechaIngreso: '2026-10-13T10:00:00', fechaAlta: '2026-10-14T16:00:00', jaulaArea: 'A-02', motivo: 'Crisis artrítica - manejo del dolor', estado: 'alta', resumenAlta: 'Paciente estable, responde a AINEs. Dolor controlado.', indicacionesAlta: 'Continuar Carprofeno 50mg cada 12h por 10 días. Reposo relativo. Control en 7 días.' },
+  { id: 'hos_001', mascotaId: 'mas_020', casoId: 'cas_006', veterinarioId: 'vet_002', citaId: null, fechaIngreso: '2026-10-14T08:00:00', fechaAlta: null, jaulaArea: 'A-01', motivo: 'Post-operatorio OVH - observación 24h', estado: 'hospitalizado' },
+  { id: 'hos_002', mascotaId: 'mas_004', casoId: 'cas_009', veterinarioId: 'vet_001', citaId: null, fechaIngreso: '2026-10-15T07:00:00', fechaAlta: null, jaulaArea: 'B-03', motivo: 'Gastroenteritis aguda - fluidos IV', estado: 'hospitalizado' },
+  { id: 'hos_003', mascotaId: 'mas_013', casoId: 'cas_005', veterinarioId: 'vet_001', citaId: null, fechaIngreso: '2026-10-13T10:00:00', fechaAlta: '2026-10-14T16:00:00', jaulaArea: 'A-02', motivo: 'Crisis artrítica - manejo del dolor', estado: 'alta', resumenAlta: 'Paciente estable, responde a AINEs. Dolor controlado.', indicacionesAlta: 'Continuar Carprofeno 50mg cada 12h por 10 días. Reposo relativo. Control en 7 días.' },
 ];
 
 // ==================== MEDICACIONES ====================
