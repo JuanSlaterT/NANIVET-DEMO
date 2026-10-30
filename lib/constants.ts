@@ -48,12 +48,13 @@ export const PERMISOS_NAV: Record<string, Rol[]> = {
   citas: ['admin', 'veterinario', 'recepcionista'],
   clientes: ['admin', 'veterinario', 'recepcionista'],
   mascotas: ['admin', 'veterinario', 'recepcionista'],
+  staff: ['admin'],
   casos: ['admin', 'veterinario'],
   vacunas: ['admin', 'veterinario', 'recepcionista'],
+  desparasitacion: ['admin', 'veterinario', 'recepcionista'],
   horarios: ['admin', 'veterinario'],
   campanas: ['admin', 'veterinario', 'recepcionista'],
   hospitalizacion: ['admin', 'veterinario'],
-  encuestas: ['admin', 'veterinario', 'recepcionista'],
   auditoria: ['admin'],
 };
 
@@ -101,8 +102,23 @@ export const HORARIO_DEFAULT = {
 };
 
 // Formato fechas: dd/mm/aaaa
+// IMPORTANTE: Estas funciones parsean strings ISO directamente sin conversión de timezone.
+// No usar new Date(string) porque JavaScript interpreta strings ISO como UTC y luego
+// getHours()/getDate() devuelven valores convertidos al timezone local, causando desfases.
 export function formatDate(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  if (!date) return '—';
+  // Si es string, parsear directamente sin crear Date object
+  if (typeof date === 'string') {
+    // Formato YYYY-MM-DD o YYYY-MM-DDTHH:mm:ss...
+    const match = date.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [_, yyyy, mm, dd] = match;
+      return `${dd}/${mm}/${yyyy}`;
+    }
+    return '—';
+  }
+  const d = date;
+  if (isNaN(d.getTime())) return '—';
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
@@ -110,14 +126,36 @@ export function formatDate(date: string | Date): string {
 }
 
 export function formatDateTime(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  if (!date) return '—';
+  if (typeof date === 'string') {
+    // Extraer hora directamente del string
+    const match = date.match(/T(\d{2}):(\d{2})/);
+    if (match) {
+      const [_, hh, min] = match;
+      return `${formatDate(date)} ${hh}:${min}`;
+    }
+    return '—';
+  }
+  const d = date;
+  if (isNaN(d.getTime())) return '—';
   const hh = String(d.getHours()).padStart(2, '0');
   const min = String(d.getMinutes()).padStart(2, '0');
   return `${formatDate(d)} ${hh}:${min}`;
 }
 
 export function formatTime(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  if (!date) return '—';
+  if (typeof date === 'string') {
+    // Extraer hora directamente del string sin conversión
+    const match = date.match(/T(\d{2}):(\d{2})/);
+    if (match) {
+      const [_, hh, min] = match;
+      return `${hh}:${min}`;
+    }
+    return '—';
+  }
+  const d = date;
+  if (isNaN(d.getTime())) return '—';
   const hh = String(d.getHours()).padStart(2, '0');
   const min = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${min}`;

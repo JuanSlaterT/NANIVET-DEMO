@@ -15,7 +15,7 @@ import { GlobalSearch } from '@/components/admin/global-search';
 import {
   LayoutDashboard, Calendar, Users, PawPrint, ClipboardList,
   Stethoscope, Syringe, Settings, LogOut, Menu,
-  ChevronDown, Clock, Search, Megaphone, HeartPulse, Star, ScrollText,
+  ChevronDown, Clock, Search, Megaphone, HeartPulse, Star, ScrollText, Pill, UserCog,
 } from 'lucide-react';
 
 interface NavItem {
@@ -28,14 +28,16 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/calendario', label: 'Calendario', icon: Calendar },
-  { href: '/admin/citas', label: 'Citas', icon: Clock },
   { href: '/admin/clientes', label: 'Clientes', icon: Users },
+  { href: '/admin/staff', label: 'Staff', icon: UserCog, roles: ['admin'] },
+  { href: '/admin/citas', label: 'Citas', icon: Clock },
   { href: '/admin/mascotas', label: 'Mascotas', icon: PawPrint },
   { href: '/admin/casos', label: 'Casos Clínicos', icon: ClipboardList, roles: ['admin', 'veterinario'] },
   { href: '/admin/vacunas', label: 'Vacunas', icon: Syringe },
+  { href: '/admin/desparasitacion', label: 'Desparasitación', icon: Pill },
   { href: '/admin/hospitalizacion', label: 'Hospitalización', icon: HeartPulse, roles: ['admin', 'veterinario'] },
   { href: '/admin/campanas', label: 'Campañas', icon: Megaphone },
-  { href: '/admin/encuestas', label: 'Encuestas', icon: Star },
+  { href: '/admin/puntuaciones', label: 'Puntuaciones', icon: Star, roles: ['admin', 'veterinario', 'recepcionista'] },
   { href: '/admin/horarios', label: 'Horarios', icon: Settings, roles: ['admin', 'veterinario'] },
   { href: '/admin/auditoria', label: 'Auditoría', icon: ScrollText, roles: ['admin'] },
 ];
@@ -64,13 +66,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const sidebar = (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3 px-5 py-5 border-b border-border/40">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
-          <PawPrint className="h-5 w-5 text-white" />
-        </div>
-        <div>
-          <h1 className="font-bold text-lg leading-tight">NANIVET</h1>
-          <p className="text-[10px] text-muted-foreground leading-tight">Clínica Veterinaria</p>
-        </div>
+        <img src="/logo.svg" alt="NANIVET Logo" className="h-10 w-auto" />
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">

@@ -33,16 +33,14 @@ export default function HospitalizacionPage() {
 
   useEffect(() => {
     (async () => {
-      const [hosps, mas, vs, clis, meds, evols, cit] = await Promise.all([
+      const [hosps, mas, vs, clis, cit] = await Promise.all([
         HospitalizacionRepository.getAll(),
         MascotaRepository.getAll(),
         VeterinarioRepository.getAll(),
         ClienteRepository.getAll(),
-        MedicacionRepository.getByHospitalizacion(''),
-        EvolucionRepository.getByHospitalizacion(''),
         CitaRepository.getAll(),
       ]);
-      // Fix: need all medicaciones and evoluciones
+      // Fetch all medicaciones and evoluciones for each hospitalization
       const allMedicaciones: Medicacion[] = [];
       const allEvoluciones: EvolucionDiaria[] = [];
       for (const h of hosps) {

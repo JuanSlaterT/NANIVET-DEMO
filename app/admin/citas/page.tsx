@@ -10,10 +10,32 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { Clock, Plus, Edit, Trash2, Search, MessageCircle, Calendar as CalIcon, HeartPulse } from 'lucide-react';
+import { Clock, Plus, Edit, Trash2, Search, MessageCircle, Calendar as CalIcon, HeartPulse, Weight } from 'lucide-react';
 import { CitaRepository, MascotaRepository, VeterinarioRepository, ClienteRepository, HospitalizacionRepository } from '@/lib/repositories';
 import { ESTADOS_CITA, TIPOS_SERVICIO, formatDateTime, formatDate, formatTime, buildWhatsAppUrl } from '@/lib/constants';
 import type { Cita, Mascota, Veterinario, Cliente, Hospitalizacion } from '@/lib/models';
+
+// Helper function to generate time slots based on veterinarian's horario
+const generateTimeSlots = (horario: { inicio: string; fin: string; intervalo: number }): string[] => {
+  const slots: string[] = [];
+  const [startHour, startMin] = horario.inicio.split(':').map(Number);
+  const [endHour, endMin] = horario.fin.split(':').map(Number);
+  
+  let currentHour = startHour;
+  let currentMin = startMin;
+  const endTotalMinutes = endHour * 60 + endMin;
+  
+  while (currentHour * 60 + currentMin < endTotalMinutes) {
+    slots.push(`${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`);
+    currentMin += horario.intervalo;
+    if (currentMin >= 60) {
+      currentHour += Math.floor(currentMin / 60);
+      currentMin = currentMin % 60;
+    }
+  }
+  
+  return slots;
+};
 
 export default function CitasPage() {
   const [citas, setCitas] = useState<Cita[]>([]);
@@ -31,9 +53,11 @@ export default function CitasPage() {
 
   const [form, setForm] = useState({
     mascotaId: '', veterinarioId: '', tipoServicio: 'consulta',
-    fecha: '', hora: '', estado: 'pendiente', motivo: '', notas: '',
+    fecha: '', hora: '', estado: 'pendiente', motivo: '', notas: '', peso: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showPeso, setShowPeso] = useState(false);
+  const [timeSlots, setTimeSlots] = useState<string[]>([]);
 
   const loadData = async () => {
     const [c, mas, v, cli, hosps] = await Promise.all([
@@ -70,21 +94,51 @@ export default function CitasPage() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ mascotaId: '', veterinarioId: '', tipoServicio: 'consulta', fecha: '2026-10-15', hora: '09:00', estado: 'pendiente', motivo: '', notas: '' });
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const fechaManana = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+    const defaultVet = vets[0] || null;
+    const defaultHora = defaultVet ? defaultVet.horario.inicio : '09:00';
+    setForm({ mascotaId: '', veterinarioId: defaultVet?.id || '', tipoServicio: 'consulta', fecha: fechaManana, hora: defaultHora, estado: 'pendiente', motivo: '', notas: '', peso: '' });
+    setTimeSlots(defaultVet ? generateTimeSlots(defaultVet.horario) : []);
     setErrors({});
     setDialogOpen(true);
   };
 
   const openEdit = (cita: Cita) => {
     const d = new Date(cita.fechaHora);
+    const vet = vets.find(v => v.id === cita.veterinarioId);
+    let slots = vet ? generateTimeSlots(vet.horario) : [];
+    const existingHora = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    if (!slots.includes(existingHora)) {
+      slots = [...slots, existingHora];
+    }
     setEditing(cita);
     setForm({
       mascotaId: cita.mascotaId, veterinarioId: cita.veterinarioId, tipoServicio: cita.tipoServicio,
-      fecha: cita.fechaHora.slice(0, 10), hora: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
-      estado: cita.estado, motivo: cita.motivo, notas: cita.notas,
+      fecha: cita.fechaHora.slice(0, 10), hora: existingHora,
+      estado: cita.estado, motivo: cita.motivo, notas: cita.notas, peso: cita.pesoCita?.toString() || '',
     });
+    setTimeSlots(slots);
     setErrors({});
     setDialogOpen(true);
+  };
+
+  const onVeterinarioChange = (vetId: string) => {
+    const vet = vets.find(v => v.id === vetId);
+    if (vet) {
+      const slots = generateTimeSlots(vet.horario);
+      setTimeSlots(slots);
+      // Reset hora to first slot if current hora is not in the new slots
+      if (!slots.includes(form.hora)) {
+        setForm({ ...form, veterinarioId: vetId, hora: slots[0] });
+      } else {
+        setForm({ ...form, veterinarioId: vetId });
+      }
+    } else {
+      setTimeSlots([]);
+      setForm({ ...form, veterinarioId: vetId, hora: '' });
+    }
   };
 
   const validate = () => {
@@ -101,11 +155,12 @@ export default function CitasPage() {
   const handleSave = async () => {
     if (!validate()) return;
     const fechaHora = `${form.fecha}T${form.hora}:00`;
+    const pesoCita = form.peso ? parseFloat(form.peso) : null;
     const data = {
       mascotaId: form.mascotaId, veterinarioId: form.veterinarioId,
       tipoServicio: form.tipoServicio as keyof typeof TIPOS_SERVICIO,
       fechaHora, estado: form.estado as keyof typeof ESTADOS_CITA,
-      motivo: form.motivo.trim(), notas: form.notas.trim(),
+      motivo: (form.motivo ?? '').trim(), notas: (form.notas ?? '').trim(), pesoCita: pesoCita && pesoCita > 0 ? pesoCita : null,
     };
     if (editing) {
       await CitaRepository.update(editing.id, data);
@@ -247,7 +302,7 @@ export default function CitasPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Veterinario <span className="text-destructive">*</span></Label>
-                <Select value={form.veterinarioId} onValueChange={(v) => setForm({ ...form, veterinarioId: v })}>
+                <Select value={form.veterinarioId} onValueChange={onVeterinarioChange}>
                   <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                   <SelectContent>
                     {vets.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}
@@ -273,9 +328,19 @@ export default function CitasPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Hora <span className="text-destructive">*</span></Label>
-                <Input type="time" value={form.hora} onChange={(e) => setForm({ ...form, hora: e.target.value })} />
+                <Select value={form.hora} onValueChange={(v) => setForm({ ...form, hora: v })}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar hora..." /></SelectTrigger>
+                  <SelectContent>
+                    {timeSlots.map(slot => <SelectItem key={slot} value={slot}>{slot}</SelectItem>)}
+                  </SelectContent>
+                </Select>
                 {errors.hora && <p className="text-xs text-destructive">{errors.hora}</p>}
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-2"><Weight className="h-4 w-4" /> Peso (kg)</Label>
+              <Input type="number" step="0.1" min="0" placeholder="Ej: 25.5" value={form.peso} onChange={(e) => setForm({ ...form, peso: e.target.value })} />
+              <p className="text-xs text-muted-foreground">Opcional — Se registra en la línea de tiempo y gráfica de peso al marcar como atendida</p>
             </div>
             <div className="space-y-1.5">
               <Label>Estado</Label>

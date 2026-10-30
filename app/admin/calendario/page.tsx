@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, Calendar as CalIcon } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ChevronLeft, ChevronRight, Calendar as CalIcon, Lock, UserCog } from 'lucide-react';
 import { CitaRepository, MascotaRepository, VeterinarioRepository, VacunaRepository, CirugiaRepository } from '@/lib/repositories';
 import { TIPOS_SERVICIO, formatTime, formatDate } from '@/lib/constants';
-import type { Cita, Mascota, Veterinario, Vacuna, Cirugia } from '@/lib/models';
+import { useAuth } from '@/components/auth-provider';
+import type { Cita, Mascota, Veterinario, Vacuna, Cirugia, HorarioBloqueado } from '@/lib/models';
 
 type Vista = 'mes' | 'semana' | 'dia';
 type CalEvent = { id: string; fecha: string; titulo: string; color: string; tipo: string; hora: string };
@@ -16,6 +18,7 @@ const DIAS_SEMANA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 export default function CalendarioPage() {
+  const { user } = useAuth();
   const [vista, setVista] = useState<Vista>('mes');
   const [fechaActual, setFechaActual] = useState(new Date('2026-10-15'));
   const [citas, setCitas] = useState<Cita[]>([]);
@@ -23,9 +26,45 @@ export default function CalendarioPage() {
   const [vets, setVets] = useState<Veterinario[]>([]);
   const [vacunas, setVacunas] = useState<Vacuna[]>([]);
   const [cirugias, setCirugias] = useState<Cirugia[]>([]);
+  const [bloqueos, setBloqueos] = useState<HorarioBloqueado[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<CalEvent | null>(null);
+  const [selectedVetId, setSelectedVetId] = useState<string | 'all' | null>(null);
 
+  // Determine if user should see vet selector
+  const showVetSelector = user && (user.rol === 'admin' || user.rol === 'recepcionista');
+
+  // Auto-select user's vet ID if they are a veterinario
+  useEffect(() => {
+    if (user?.rol === 'veterinario' && user.veterinarioId) {
+      setSelectedVetId(user.veterinarioId);
+    } else if (user?.rol === 'admin' || user?.rol === 'recepcionista') {
+      // Admin/recepcionista: default to "all"
+      setSelectedVetId('all');
+    }
+  }, [user]);
+
+  // Load bloqueos based on selected vet
+  const loadBloqueos = async (vetId: string | 'all' | null, currentVets: Veterinario[]) => {
+    if (!vetId) {
+      setBloqueos([]);
+      return;
+    }
+    if (vetId === 'all') {
+      // Load bloqueos for all vets
+      const allBloqueos: HorarioBloqueado[] = [];
+      for (const vet of currentVets) {
+        const b = await VeterinarioRepository.getBloqueos(vet.id);
+        allBloqueos.push(...b);
+      }
+      setBloqueos(allBloqueos);
+    } else {
+      const b = await VeterinarioRepository.getBloqueos(vetId);
+      setBloqueos(b);
+    }
+  };
+
+  // Load all data once on mount
   useEffect(() => {
     (async () => {
       const [c, m, v, vac, cir] = await Promise.all([
@@ -37,6 +76,14 @@ export default function CalendarioPage() {
       setLoading(false);
     })();
   }, []);
+
+  // Load bloqueos when selectedVetId changes
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      await loadBloqueos(selectedVetId, vets);
+    })();
+  }, [selectedVetId, user]);
 
   const getMascota = (id: string) => mascotas.find(m => m.id === id);
 
@@ -70,6 +117,7 @@ export default function CalendarioPage() {
   ];
 
   const getEventsForDate = (dateStr: string) => allEvents.filter(e => e.fecha === dateStr);
+  const isBlocked = (dateStr: string) => bloqueos.some(b => b.fecha === dateStr);
 
   const prevPeriod = () => {
     const d = new Date(fechaActual);
@@ -85,7 +133,8 @@ export default function CalendarioPage() {
     else d.setDate(d.getDate() + 1);
     setFechaActual(d);
   };
-  const goToday = () => setFechaActual(new Date('2026-10-15'));
+
+  const goToday = () => setFechaActual(new Date());
 
   const headerLabel = (() => {
     if (vista === 'mes') return `${MESES[fechaActual.getMonth()]} ${fechaActual.getFullYear()}`;
@@ -126,7 +175,10 @@ export default function CalendarioPage() {
   })();
 
   const dateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const isToday = (d: Date) => dateStr(d) === '2026-10-15';
+  const isToday = (d: Date) => {
+    const today = new Date();
+    return dateStr(d) === dateStr(today);
+  };
 
   if (loading) {
     return <div className="space-y-4"><div className="h-8 w-48 bg-muted rounded animate-pulse" /><div className="h-96 bg-muted rounded-lg animate-pulse" /></div>;
@@ -140,6 +192,24 @@ export default function CalendarioPage() {
           <p className="text-sm text-muted-foreground mt-1">Citas, vacunas próximas y cirugías</p>
         </div>
         <div className="flex items-center gap-2">
+          {showVetSelector && (
+            <div className="flex items-center gap-2">
+              <UserCog className="h-4 w-4 text-muted-foreground" />
+              <Select value={selectedVetId ?? 'all'} onValueChange={(val) => setSelectedVetId(val as string | 'all' | null)}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Seleccionar veterinario" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los veterinarios</SelectItem>
+                  {vets.map(vet => (
+                    <SelectItem key={vet.id} value={vet.id}>
+                      {vet.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="inline-flex rounded-lg border border-border p-0.5">
             {(['mes', 'semana', 'dia'] as Vista[]).map(v => (
               <Button key={v} variant={vista === v ? 'default' : 'ghost'} size="sm" className="text-xs" onClick={() => setVista(v)}>
@@ -164,6 +234,7 @@ export default function CalendarioPage() {
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-sky-500" /> Cita</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Vacuna</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Cirugía</span>
+              <span className="flex items-center gap-1"><Lock className="h-3 w-3 text-red-500" /> Bloqueado</span>
             </div>
           </div>
 
@@ -179,9 +250,13 @@ export default function CalendarioPage() {
                   const ds = dateStr(d);
                   const events = getEventsForDate(ds);
                   const today = isToday(d);
+                  const blocked = isBlocked(ds);
                   return (
-                    <div key={i} className={`min-h-[80px] rounded-lg border p-1.5 cursor-pointer transition-colors ${today ? 'border-primary/50 bg-primary/5' : 'border-border/30 hover:border-border'}`}>
-                      <div className={`text-xs font-medium mb-1 ${today ? 'text-primary' : 'text-muted-foreground'}`}>{d.getDate()}</div>
+                    <div key={i} className={`min-h-[80px] rounded-lg border p-1.5 cursor-pointer transition-colors ${blocked ? 'border-red-300 bg-red-50/50' : today ? 'border-sky-400 bg-sky-100' : 'border-border/30 hover:border-border'}`}>
+                      <div className={`text-xs font-medium mb-1 ${today ? 'text-sky-700' : blocked ? 'text-red-600' : 'text-muted-foreground'}`}>
+                        {d.getDate()}
+                        {blocked && <span className="ml-1" title="Día bloqueado">🔒</span>}
+                      </div>
                       <div className="space-y-0.5">
                         {events.slice(0, 3).map(e => (
                           <div key={`${e.id}-${e.tipo}`} className={`cal-event ${e.color} text-white`} onClick={(ev) => { ev.stopPropagation(); setSelectedEvent(e); }}>
@@ -204,10 +279,12 @@ export default function CalendarioPage() {
                 const ds = dateStr(d);
                 const events = getEventsForDate(ds);
                 const today = isToday(d);
+                const blocked = isBlocked(ds);
                 return (
-                  <div key={i} className={`rounded-lg border p-2 min-h-[200px] ${today ? 'border-primary/50 bg-primary/5' : 'border-border/30'}`}>
-                    <div className={`text-xs font-medium mb-2 ${today ? 'text-primary' : 'text-muted-foreground'}`}>
+                  <div key={i} className={`rounded-lg border p-2 min-h-[200px] ${blocked ? 'border-red-300 bg-red-50/50' : today ? 'border-sky-400 bg-sky-100' : 'border-border/30'}`}>
+                    <div className={`text-xs font-medium mb-2 ${today ? 'text-sky-700' : blocked ? 'text-red-600' : 'text-muted-foreground'}`}>
                       {DIAS_SEMANA[d.getDay()]} {d.getDate()}
+                      {blocked && <span className="ml-1" title="Día bloqueado">🔒</span>}
                     </div>
                     <div className="space-y-1">
                       {events.sort((a, b) => a.hora.localeCompare(b.hora)).map(e => (

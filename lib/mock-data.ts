@@ -1,7 +1,33 @@
 // Datos mock para NANIVET - Clínica Veterinaria
 // 10 clientes, 20 mascotas, 30 citas, 15 casos clínicos, vacunas, tratamientos, 3 cirugías
 
-import type { Cliente, Mascota, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, Veterinario, UsuarioAuth, AuditLog, Encuesta, Hospitalizacion, Medicacion, EvolucionDiaria, CampanaEnvio } from './models';
+import type { Cliente, Mascota, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, Veterinario, UsuarioAuth, AuditLog, Hospitalizacion, Medicacion, EvolucionDiaria, CampanaEnvio, PuntuacionCita, CatalogoVacuna, CatalogoDesparasitacion, Staff } from './models';
+
+// ==================== CATÁLOGO DE VACUNAS CONFIGURABLE ====================
+export const catalogosVacunas: CatalogoVacuna[] = [
+  { id: 'cv_001', nombre: 'Antirrábica', intervaloDias: 365, especie: 'all', activa: true },
+  { id: 'cv_002', nombre: 'Múltiple Canina (DA2PP)', intervaloDias: 365, especie: 'Perro', activa: true },
+  { id: 'cv_003', nombre: 'Triple Felina', intervaloDias: 365, especie: 'Gato', activa: true },
+  { id: 'cv_004', nombre: 'Primera Dosis Cachorro', intervaloDias: 45, especie: 'Perro', activa: true },
+  { id: 'cv_005', nombre: 'Leishmaniasis', intervaloDias: 365, especie: 'Perro', activa: true },
+  { id: 'cv_006', nombre: 'Bordetella', intervaloDias: 180, especie: 'Perro', activa: true },
+  { id: 'cv_007', nombre: 'Leptospirosis', intervaloDias: 365, especie: 'Perro', activa: true },
+  { id: 'cv_008', nombre: 'Cuádruple Felina', intervaloDias: 365, especie: 'Gato', activa: true },
+  { id: 'cv_009', nombre: 'Clamidia Felina', intervaloDias: 365, especie: 'Gato', activa: true },
+  { id: 'cv_010', nombre: 'Vacuna contra la rabia (Gato)', intervaloDias: 365, especie: 'Gato', activa: true },
+];
+
+// ==================== CATÁLOGO DE DESPARASITANTES CONFIGURABLE ====================
+export const catalogosDesparasitacion: CatalogoDesparasitacion[] = [
+  { id: 'cd_001', nombre: 'Praziquantel + Febantel', intervaloMeses: 3, via: 'Oral', activa: true },
+  { id: 'cd_002', nombre: 'Ivermectina 0.1%', intervaloMeses: 1, via: 'Subcutánea', activa: true },
+  { id: 'cd_003', nombre: 'Milbemicina Oxima', intervaloMeses: 3, via: 'Oral', activa: true },
+  { id: 'cd_004', nombre: 'Emodepsida + Praziquantel (tópico)', intervaloMeses: 1, via: 'Tópica', activa: true },
+  { id: 'cd_005', nombre: 'Selamectina (Revolution)', intervaloMeses: 1, via: 'Tópica', activa: true },
+  { id: 'cd_006', nombre: 'Milbemicina', intervaloMeses: 3, via: 'Oral', activa: true },
+  { id: 'cd_007', nombre: 'Morantel', intervaloMeses: 2, via: 'Oral', activa: true },
+  { id: 'cd_008', nombre: 'Mirataz (Mifepristona) + Praziquantel', intervaloMeses: 1, via: 'Oral', activa: true },
+];
 
 // ==================== USUARIOS (AUTH MOCK) ====================
 export const usuarios: UsuarioAuth[] = [
@@ -11,6 +37,8 @@ export const usuarios: UsuarioAuth[] = [
 ];
 
 // ==================== VETERINARIOS ====================
+// Días en formato JS nativo: 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb
+// Días laborales: lunes a viernes (1,2,3,4,5)
 export const veterinarios: Veterinario[] = [
   { id: 'vet_001', nombre: 'Dra. Nicole Pérez', especialidad: 'Medicina interna', telefono: '0991234567', horario: { inicio: '08:00', fin: '17:00', dias: [1,2,3,4,5,6], intervalo: 30 } },
   { id: 'vet_002', nombre: 'Dr. Andrés Torres', especialidad: 'Cirugía', telefono: '0987654321', horario: { inicio: '09:00', fin: '18:00', dias: [1,2,3,4,5], intervalo: 30 } },
@@ -21,6 +49,15 @@ export const veterinarios: Veterinario[] = [
 export const horariosBloqueados = [
   { id: 'blk_001', veterinarioId: 'vet_001', fecha: '2026-10-16', motivo: 'Capacitación' },
   { id: 'blk_002', veterinarioId: 'vet_002', fecha: '2026-10-20', motivo: 'Cirugía programada externa' },
+];
+
+// ==================== STAFF (USUARIOS DEL SISTEMA) ====================
+export const staff: Staff[] = [
+  { id: 'usr_001', nombre: 'Dra. Nicole Pérez', email: 'veterinario@nanivet.com', password: 'nanivet123', rol: 'veterinario', telefono: '0991234567', especialidad: 'Medicina interna', activo: true, fechaAlta: '2024-01-15' },
+  { id: 'usr_002', nombre: 'Dr. Andrés Torres', email: 'veterinario2@nanivet.com', password: 'nanivet123', rol: 'veterinario', telefono: '0987654321', especialidad: 'Cirugía', activo: true, fechaAlta: '2024-03-20' },
+  { id: 'usr_003', nombre: 'Dra. Sofía Vera', email: 'veterinario3@nanivet.com', password: 'nanivet123', rol: 'veterinario', telefono: '0971122334', especialidad: 'Dermatología', activo: true, fechaAlta: '2024-06-10' },
+  { id: 'usr_004', nombre: 'Carlos Mendoza', email: 'recepcion@nanivet.com', password: 'nanivet123', rol: 'recepcionista', telefono: '0993344556', especialidad: null, activo: true, fechaAlta: '2024-02-01' },
+  { id: 'usr_005', nombre: 'Admin NANIVET', email: 'admin@nanivet.com', password: 'nanivet123', rol: 'admin', telefono: '0994455667', especialidad: null, activo: true, fechaAlta: '2023-12-01' },
 ];
 
 // ==================== CLIENTES (10) ====================
@@ -231,21 +268,6 @@ export const auditLogs: AuditLog[] = [
   { id: 'aud_015', usuario: 'Dra. Nicole Pérez', rol: 'veterinario', fechaHora: '2026-10-14T16:00:00', accion: 'alta_hospitalizacion', entidad: 'Hospitalizacion', entidadId: 'hos_001', diff: [{ campo: 'estado', antes: 'hospitalizado', despues: 'alta' }], valoresDespues: { resumenAlta: 'Paciente recuperado, alta con indicaciones' } },
 ];
 
-// ==================== ENCUESTAS (8) ====================
-export const encuestas: Encuesta[] = [
-  { id: 'enc_001', citaId: 'cit_024', token: 'tok_enc001_abcd', mascotaId: 'mas_001', veterinarioId: 'vet_001', calificacion: 5, recomienda: true, comentario: 'Excelente atención, muy profesionales.', fechaRespuesta: '2026-10-09T10:00:00', respondida: true },
-  { id: 'enc_002', citaId: 'cit_025', token: 'tok_enc002_efgh', mascotaId: 'mas_003', veterinarioId: 'vet_002', calificacion: 4, recomienda: true, comentario: 'Buena atención, el wait fue un poco largo.', fechaRespuesta: '2026-10-09T15:00:00', respondida: true },
-  { id: 'enc_003', citaId: 'cit_026', token: 'tok_enc003_ijkl', mascotaId: 'mas_008', veterinarioId: 'vet_003', calificacion: 5, recomienda: true, comentario: 'Muy agradecida con la Dra. Vera.', fechaRespuesta: '2026-10-11T09:00:00', respondida: true },
-  { id: 'enc_004', citaId: 'cit_027', token: 'tok_enc004_mnop', mascotaId: 'mas_013', veterinarioId: 'vet_001', calificacion: 5, recomienda: true, comentario: 'Muy buen trato con Toby, explicaron todo bien.', fechaRespuesta: '2026-10-06T12:00:00', respondida: true },
-  { id: 'enc_005', citaId: 'cit_028', token: 'tok_enc005_qrst', mascotaId: 'mas_020', veterinarioId: 'vet_002', calificacion: 4, recomienda: true, comentario: null, fechaRespuesta: '2026-10-04T16:00:00', respondida: true },
-  { id: 'enc_006', citaId: 'cit_024', token: 'tok_enc006_uvwx', mascotaId: 'mas_001', veterinarioId: 'vet_001', calificacion: 3, recomienda: true, comentario: 'Todo bien pero los precios subieron.', fechaRespuesta: '2026-10-10T08:00:00', respondida: true },
-  { id: 'enc_007', citaId: 'cit_025', token: 'tok_enc007_yzab', mascotaId: 'mas_003', veterinarioId: 'vet_002', calificacion: 5, recomienda: true, comentario: 'Rocky mejoró rápidamente.', fechaRespuesta: '2026-10-10T14:00:00', respondida: true },
-  { id: 'enc_008', citaId: 'cit_026', token: 'tok_enc008_cdef', mascotaId: 'mas_008', veterinarioId: 'vet_003', calificacion: 2, recomienda: false, comentario: 'Esperé mucho tiempo.', fechaRespuesta: '2026-10-12T10:00:00', respondida: true },
-  // Pendientes (no respondidas) para citas recientes
-  { id: 'enc_009', citaId: 'cit_024', token: 'tok_enc009_ghij', mascotaId: 'mas_001', veterinarioId: 'vet_001', calificacion: 0, recomienda: false, comentario: null, fechaRespuesta: null, respondida: false },
-  { id: 'enc_010', citaId: 'cit_027', token: 'tok_enc010_klmn', mascotaId: 'mas_013', veterinarioId: 'vet_001', calificacion: 0, recomienda: false, comentario: null, fechaRespuesta: null, respondida: false },
-];
-
 // ==================== HOSPITALIZACIONES (2 activas + 1 alta) ====================
 export const hospitalizaciones: Hospitalizacion[] = [
   { id: 'hos_001', mascotaId: 'mas_020', casoId: 'cas_006', veterinarioId: 'vet_002', citaId: null, fechaIngreso: '2026-10-14T08:00:00', fechaAlta: null, jaulaArea: 'A-01', motivo: 'Post-operatorio OVH - observación 24h', estado: 'hospitalizado' },
@@ -311,4 +333,19 @@ export const campanaEnvios: CampanaEnvio[] = [
   // Cumpleaños de mascotas (mas_001 nació el 15 marzo - no aplica; mas_011 nació 25 abril - no aplica)
   // Mas_002 cumple el 20 de junio. Para demo, hay un envío de cumpleaños de mas_015 (8 de mayo)
   { id: 'cme_008', segmento: 'cumpleanos_mascotas', clienteId: 'cli_010', mascotaId: 'mas_015', motivo: 'Cumpleaños de Duke - 8 de mayo', fechaEnviado: '2026-05-08T08:00:00', enviadoPor: 'Admin NANIVET' },
+];
+
+// ==================== PUNTUACIONES DE CITA ====================
+// Citas atendidas que generan un enlace de puntuación
+export const puntuaciones: PuntuacionCita[] = [
+  // Respondidas (desde citas históricas atendidas)
+  { id: 'pnt_001', citaId: 'cit_024', token: 'tok_pnt001_abcd', mascotaId: 'mas_001', veterinarioId: 'vet_001', calificacion: 5, recomienda: true, comentario: 'Excelente atención, muy profesionales.', fechaRespuesta: '2026-10-09T10:00:00', respondida: true },
+  { id: 'pnt_002', citaId: 'cit_025', token: 'tok_pnt002_efgh', mascotaId: 'mas_003', veterinarioId: 'vet_002', calificacion: 4, recomienda: true, comentario: 'Buena atención, el wait fue un poco largo.', fechaRespuesta: '2026-10-09T15:00:00', respondida: true },
+  { id: 'pnt_003', citaId: 'cit_026', token: 'tok_pnt003_ijkl', mascotaId: 'mas_008', veterinarioId: 'vet_003', calificacion: 5, recomienda: true, comentario: 'Muy agradecida con la Dra. Vera.', fechaRespuesta: '2026-10-11T09:00:00', respondida: true },
+  { id: 'pnt_004', citaId: 'cit_027', token: 'tok_pnt004_mnop', mascotaId: 'mas_013', veterinarioId: 'vet_001', calificacion: 5, recomienda: true, comentario: 'Muy buen trato con Toby, explicaron todo bien.', fechaRespuesta: '2026-10-06T12:00:00', respondida: true },
+  { id: 'pnt_005', citaId: 'cit_028', token: 'tok_pnt005_qrst', mascotaId: 'mas_020', veterinarioId: 'vet_002', calificacion: 4, recomienda: true, comentario: null, fechaRespuesta: '2026-10-04T16:00:00', respondida: true },
+  // Pendientes (citas atendidas recientemente)
+  { id: 'pnt_006', citaId: 'cit_002', token: 'tok_pnt006_uvwx', mascotaId: 'mas_006', veterinarioId: 'vet_001', calificacion: 0, recomienda: null, comentario: null, fechaRespuesta: null, respondida: false },
+  { id: 'pnt_007', citaId: 'cit_004', token: 'tok_pnt007_yzab', mascotaId: 'mas_003', veterinarioId: 'vet_002', calificacion: 0, recomienda: null, comentario: null, fechaRespuesta: null, respondida: false },
+  { id: 'pnt_008', citaId: 'cit_006', token: 'tok_pnt008_cdef', mascotaId: 'mas_002', veterinarioId: 'vet_003', calificacion: 0, recomienda: null, comentario: null, fechaRespuesta: null, respondida: false },
 ];

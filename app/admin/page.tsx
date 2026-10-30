@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar, Clock, Syringe, ClipboardList, PawPrint, Users, TrendingUp, AlertTriangle, ArrowRight, HeartPulse, Star } from 'lucide-react';
-import { CitaRepository, VacunaRepository, CasoRepository, MascotaRepository, ClienteRepository, VeterinarioRepository, HospitalizacionRepository, EncuestaRepository } from '@/lib/repositories';
+import { CitaRepository, VacunaRepository, CasoRepository, MascotaRepository, ClienteRepository, VeterinarioRepository, HospitalizacionRepository, PuntuacionRepository } from '@/lib/repositories';
 import { ESTADOS_CITA, ESTADOS_CASO, TIPOS_SERVICIO, formatDate, formatTime } from '@/lib/constants';
 import type { Cita, Vacuna, CasoClinico, Mascota, Cliente, Veterinario } from '@/lib/models';
 
@@ -18,12 +18,12 @@ export default function DashboardPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [vets, setVets] = useState<Veterinario[]>([]);
   const [hospitalizados, setHospitalizados] = useState(0);
-  const [encuestaProm, setEncuestaProm] = useState({ promedio: 0, total: 0 });
+  const [puntuacionProm, setPuntuacionProm] = useState({ promedio: 0, total: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const hoy = '2026-10-15';
+      const hoy = new Date().toISOString().split('T')[0];
       const [citas, vacunas, casos, mas, cli, veterinarios, hosps, encs] = await Promise.all([
         CitaRepository.getByFecha(hoy),
         VacunaRepository.getPorVencer(60),
@@ -32,7 +32,7 @@ export default function DashboardPage() {
         ClienteRepository.getAll(),
         VeterinarioRepository.getAll(),
         HospitalizacionRepository.getActivas(),
-        EncuestaRepository.getPromedio(),
+        PuntuacionRepository.getStats(),
       ]);
       setCitasHoy(citas.sort((a, b) => a.fechaHora.localeCompare(b.fechaHora)));
       setVacunasVencer(vacunas);
@@ -41,7 +41,7 @@ export default function DashboardPage() {
       setClientes(cli);
       setVets(veterinarios);
       setHospitalizados(hosps.length);
-      setEncuestaProm({ promedio: encs.promedio, total: encs.total });
+      setPuntuacionProm({ promedio: encs.promedio, total: encs.total });
       setLoading(false);
     })();
   }, []);
@@ -70,14 +70,14 @@ export default function DashboardPage() {
     { label: 'Citas de hoy', value: citasHoy.length, icon: Clock, color: 'text-sky-500', bg: 'bg-sky-500/10' },
     { label: 'Hospitalizados', value: hospitalizados, icon: HeartPulse, color: 'text-orange-500', bg: 'bg-orange-500/10' },
     { label: 'Casos abiertos', value: casosAbiertos.length, icon: ClipboardList, color: 'text-teal-500', bg: 'bg-teal-500/10' },
-    { label: 'Satisfacción', value: encuestaProm.total > 0 ? `${encuestaProm.promedio.toFixed(1)}★` : 'N/A', icon: Star, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+    { label: 'Satisfacción', value: puntuacionProm.total > 0 ? `${puntuacionProm.promedio.toFixed(1)}★` : 'N/A', icon: Star, color: 'text-amber-500', bg: 'bg-amber-500/10' },
   ];
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Resumen general - {formatDate('2026-10-15')}</p>
+        <p className="text-sm text-muted-foreground mt-1">Resumen general - {formatDate(new Date().toISOString().split('T')[0])}</p>
       </div>
 
       {/* Stats */}
@@ -164,7 +164,7 @@ export default function DashboardPage() {
             )}
             {vacunasVencer.slice(0, 6).map((vac) => {
               const mas = getMascota(vac.mascotaId);
-              const dias = Math.ceil((new Date(vac.proximaDosis).getTime() - new Date('2026-10-15').getTime()) / (1000 * 60 * 60 * 24));
+              const dias = Math.ceil((new Date(vac.proximaDosis).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
               return (
                 <Link
                   key={vac.id}

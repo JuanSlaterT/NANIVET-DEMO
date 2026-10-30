@@ -24,12 +24,16 @@ export default function HorariosPage() {
   const [blockForm, setBlockForm] = useState({ fecha: '2026-10-16', motivo: '' });
 
   const loadData = async () => {
-    const [v, b] = await Promise.all([
-      VeterinarioRepository.getAll(),
-      VeterinarioRepository.getBloqueos(),
-    ]);
+    const v = await VeterinarioRepository.getAll();
     setVets(v);
-    setBloqueos(b);
+
+    // Fetch bloqueos for each veterinarian
+    const allBloqueos: HorarioBloqueado[] = [];
+    for (const vet of v) {
+      const bloqueos = await VeterinarioRepository.getBloqueos(vet.id);
+      allBloqueos.push(...bloqueos);
+    }
+    setBloqueos(allBloqueos);
     setLoading(false);
   };
 
@@ -74,14 +78,14 @@ export default function HorariosPage() {
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <Clock className="h-4 w-4 text-primary" />
-                <span>{vet.horario.inicio} - {vet.horario.fin}</span>
+                <span>{vet.horario_inicio?.substring(0, 5) || '08:00'} - {vet.horario_fin?.substring(0, 5) || '17:00'}</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {vet.horario.dias.map(d => (
+                {(vet.dias_semana || []).map((d: number) => (
                   <span key={d} className="text-[10px] px-2 py-1 rounded-md bg-accent/40 font-medium">{DIAS_NOMBRES[d].slice(0, 3)}</span>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">Intervalo por cita: {vet.horario.intervalo} min</p>
+              <p className="text-xs text-muted-foreground">Intervalo por cita: {vet.intervalo_minutos || 30} min</p>
             </CardContent>
           </Card>
         ))}

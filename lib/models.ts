@@ -11,6 +11,18 @@ export interface UsuarioAuth {
   veterinarioId?: string;
 }
 
+export interface Staff {
+  id: string;
+  nombre: string;
+  email: string;
+  password: string;
+  rol: Rol;
+  telefono: string;
+  especialidad?: string | null;
+  activo: boolean;
+  fechaAlta: string | null;
+}
+
 export interface Veterinario {
   id: string;
   nombre: string;
@@ -81,6 +93,21 @@ export interface Cita {
   ultimoCambioPor?: string | null;
   confirmadaPorCliente?: boolean;
   canceladaPorCliente?: boolean;
+  // Peso registrado en la cita (para línea de tiempo / gráfica de peso)
+  pesoCita?: number | null;
+}
+
+export interface PuntuacionCita {
+  id: string;
+  citaId: string;
+  token: string;
+  mascotaId: string;
+  veterinarioId: string;
+  calificacion: number; // 1-5
+  recomienda: boolean | null; // null = pendiente (no respondida)
+  comentario: string | null;
+  fechaRespuesta: string | null;
+  respondida: boolean;
 }
 
 export interface SOAP {
@@ -163,6 +190,24 @@ export interface PesoRegistrado {
   fecha: string;
 }
 
+// ==================== CATÁLOGOS CONFIGURABLES ====================
+
+export interface CatalogoVacuna {
+  id: string;
+  nombre: string;
+  intervaloDias: number; // Días entre dosis
+  especie: 'all' | 'Perro' | 'Gato' | 'Conejo' | 'Ave';
+  activa: boolean;
+}
+
+export interface CatalogoDesparasitacion {
+  id: string;
+  nombre: string;
+  intervaloMeses: number; // Meses entre desparasitación
+  via: 'Oral' | 'Subcutánea' | 'Tópica' | 'Inyectable';
+  activa: boolean;
+}
+
 // ==================== NUEVAS ENTIDADES ====================
 
 export interface AuditLog {
@@ -176,19 +221,6 @@ export interface AuditLog {
   valoresAntes?: Record<string, unknown> | null;
   valoresDespues?: Record<string, unknown> | null;
   diff?: { campo: string; antes: string; despues: string }[];
-}
-
-export interface Encuesta {
-  id: string;
-  citaId: string;
-  token: string;
-  mascotaId: string;
-  veterinarioId: string;
-  calificacion: number;
-  recomienda: boolean;
-  comentario: string | null;
-  fechaRespuesta: string | null;
-  respondida: boolean;
 }
 
 export interface Hospitalizacion {

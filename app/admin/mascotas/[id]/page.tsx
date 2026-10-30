@@ -7,10 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { AlertTriangle, ArrowLeft, PawPrint, Syringe, Pill, Scissors, FileText, Calendar, TrendingUp, MessageCircle, User, ClipboardList, Sparkles } from 'lucide-react';
-import { MascotaRepository, ClienteRepository, CitaRepository, CasoRepository, VacunaRepository, TratamientoRepository, DesparasitacionRepository, CirugiaRepository, ExamenRepository, PesoRepository, AuditRepository } from '@/lib/repositories';
-import { formatDate, formatDateTime, buildWhatsAppUrl, ESTADOS_CITA, ESTADOS_CASO, TIPOS_SERVICIO } from '@/lib/constants';
-import type { Mascota, Cliente, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, PesoRegistrado, AuditLog } from '@/lib/models';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { AlertTriangle, ArrowLeft, PawPrint, Syringe, Pill, Scissors, FileText, Calendar, TrendingUp, MessageCircle, User, ClipboardList, Sparkles, Plus, Edit, Trash2, HeartPulse } from 'lucide-react';
+import { MascotaRepository, ClienteRepository, CitaRepository, CasoRepository, VacunaRepository, TratamientoRepository, DesparasitacionRepository, CirugiaRepository, ExamenRepository, PesoRepository, AuditRepository, HospitalizacionRepository, MedicacionRepository, VeterinarioRepository } from '@/lib/repositories';
+import { formatDate, formatDateTime, buildWhatsAppUrl, ESTADOS_CITA, ESTADOS_CASO, TIPOS_SERVICIO, ESTADOS_HOSPITALIZACION } from '@/lib/constants';
+import type { Mascota, Cliente, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, PesoRegistrado, AuditLog, Hospitalizacion, Medicacion } from '@/lib/models';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { useAuth } from '@/components/auth-provider';
 import { summarizeHistory } from '@/lib/ai-service';
@@ -38,24 +43,66 @@ export default function MascotaDetailPage() {
   const { user } = useAuth();
   const isClinical = user ? ROLES_CLINICOS.includes(user.rol) : false;
 
+  // Tratamiento CRUD state
+  const [tratamientoDialogOpen, setTratamientoDialogOpen] = useState(false);
+  const [editingTratamiento, setEditingTratamiento] = useState<Tratamiento | null>(null);
+  const [tratamientoForm, setTratamientoForm] = useState({
+    nombre: '', dosis: '', duracion: '', fecha: new Date().toISOString().split('T')[0], veterinarioId: 'vet_001', casoId: '',
+  });
+
+  // Hospitalización y Medicación state
+  const [hospitalizaciones, setHospitalizaciones] = useState<Hospitalizacion[]>([]);
+  const [medicaciones, setMedicaciones] = useState<Medicacion[]>([]);
+  const [veterinarios, setVeterinarios] = useState<Veterinario[]>([]);
+  const [medicacionDialogOpen, setMedicacionDialogOpen] = useState(false);
+  const [editingMedicacion, setEditingMedicacion] = useState<Medicacion | null>(null);
+  const [medicacionForm, setMedicacionForm] = useState({
+    medicamento: '', dosis: '', via: 'Oral', frecuencia: '', horasProgramadas: '', fechaInicio: new Date().toISOString().split('T')[0],
+  });
+
+  // Estado local para evitar re-renders infinitos por params/router
+  const [mascotaId, setMascotaId] = useState<string | null>(null);
+
   useEffect(() => {
+    const id = (params as { id: string }).id;
+    if (id) setMascotaId(id);
+  }, [params]);
+
+  useEffect(() => {
+    if (!mascotaId) return;
+
+    let cancelled = false;
+
     (async () => {
-      const id = params.id as string;
-      const mas = MascotaRepository.getById(id);
-      if (!mas) { router.push('/admin/mascotas'); return; }
+      const mas = await MascotaRepository.getById(mascotaId);
+      if (cancelled) return;
+      
+      if (!mas) {
+        router.push('/admin/mascotas');
+        return;
+      }
+      
       setMascota(mas);
-      const cli = ClienteRepository.getById(mas.clienteId);
+      const cli = await ClienteRepository.getById(mas.clienteId);
+      if (cancelled) return;
       setCliente(cli || null);
-      const [c, cas, vac, tra, des, cir, exa, pes] = await Promise.all([
-        CitaRepository.getByMascota(id),
-        CasoRepository.getByMascota(id),
-        VacunaRepository.getByMascota(id),
-        TratamientoRepository.getByMascota(id),
-        DesparasitacionRepository.getByMascota(id),
-        CirugiaRepository.getByMascota(id),
-        ExamenRepository.getByMascota(id),
-        PesoRepository.getByMascota(id),
+      
+      const [c, cas, vac, tra, des, cir, exa, pes, hosps, meds, vets] = await Promise.all([
+        CitaRepository.getByMascota(mascotaId),
+        CasoRepository.getByMascota(mascotaId),
+        VacunaRepository.getByMascota(mascotaId),
+        TratamientoRepository.getByMascota(mascotaId),
+        DesparasitacionRepository.getByMascota(mascotaId),
+        CirugiaRepository.getByMascota(mascotaId),
+        ExamenRepository.getByMascota(mascotaId),
+        PesoRepository.getByMascota(mascotaId),
+        HospitalizacionRepository.getByMascota(mascotaId),
+        MedicacionRepository.getByMascota(mascotaId),
+        VeterinarioRepository.getAll(),
       ]);
+      
+      if (cancelled) return;
+      
       setCitas(c.sort((a, b) => b.fechaHora.localeCompare(a.fechaHora)));
       setCasos(cas.sort((a, b) => b.fecha.localeCompare(a.fecha)));
       setVacunas(vac.sort((a, b) => b.fechaAplicacion.localeCompare(a.fechaAplicacion)));
@@ -64,11 +111,129 @@ export default function MascotaDetailPage() {
       setCirugias(cir.sort((a, b) => b.fecha.localeCompare(a.fecha)));
       setExamenes(exa.sort((a, b) => b.fecha.localeCompare(a.fecha)));
       setPesos(pes);
-      const auds = await AuditRepository.getByEntidad('Mascota', id);
+      setHospitalizaciones(hosps);
+      setMedicaciones(meds);
+      setVeterinarios(vets);
+      
+      const auds = await AuditRepository.getByEntidad('Mascota', mascotaId);
+      if (cancelled) return;
       setAuditLogs(auds);
       setLoading(false);
     })();
-  }, [params, router]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mascotaId]);
+
+  // ==================== TRATAMIENTO CRUD ====================
+  const openNewTratamiento = () => {
+    setEditingTratamiento(null);
+    setTratamientoForm({ nombre: '', dosis: '', duracion: '', fecha: new Date().toISOString().split('T')[0], veterinarioId: 'vet_001', casoId: '' });
+    setTratamientoDialogOpen(true);
+  };
+
+  const openEditTratamiento = (t: Tratamiento) => {
+    setEditingTratamiento(t);
+    setTratamientoForm({ nombre: t.nombre, dosis: t.dosis, duracion: t.duracion, fecha: t.fecha, veterinarioId: t.veterinarioId, casoId: t.casoId || '' });
+    setTratamientoDialogOpen(true);
+  };
+
+  const handleSaveTratamiento = async () => {
+    if (!tratamientoForm.nombre.trim() || !tratamientoForm.dosis.trim()) return;
+    const data = {
+      mascotaId: mascota!.id,
+      nombre: tratamientoForm.nombre.trim(),
+      dosis: tratamientoForm.dosis.trim(),
+      duracion: tratamientoForm.duracion.trim(),
+      fecha: tratamientoForm.fecha,
+      veterinarioId: tratamientoForm.veterinarioId,
+      casoId: tratamientoForm.casoId || null,
+    };
+    if (editingTratamiento) {
+      await TratamientoRepository.update(editingTratamiento.id, data);
+    } else {
+      await TratamientoRepository.create(data);
+    }
+    const updated = await TratamientoRepository.getByMascota(mascota!.id);
+    setTratamientos(updated.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+    setTratamientoDialogOpen(false);
+  };
+
+  const handleDeleteTratamiento = async (id: string) => {
+    await TratamientoRepository.delete(id);
+    const updated = await TratamientoRepository.getByMascota(mascota!.id);
+    setTratamientos(updated.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+  };
+
+  // ==================== VACUNA DELETE ====================
+  const handleDeleteVacuna = async (id: string) => {
+    if (confirm('¿Eliminar esta vacuna?')) {
+      await VacunaRepository.delete(id);
+      const updated = await VacunaRepository.getByMascota(mascota!.id);
+      setVacunas(updated.sort((a, b) => b.fechaAplicacion.localeCompare(a.fechaAplicacion)));
+    }
+  };
+
+  // ==================== DESPARASITACION DELETE ====================
+  const handleDeleteDesparasitacion = async (id: string) => {
+    if (confirm('¿Eliminar esta desparasitación?')) {
+      await DesparasitacionRepository.delete(id);
+      const updated = await DesparasitacionRepository.getByMascota(mascota!.id);
+      setDesparasitaciones(updated.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+    }
+  };
+
+  // ==================== MEDICACIÓN CRUD ====================
+  const openNewMedicacion = () => {
+    setEditingMedicacion(null);
+    setMedicacionForm({ medicamento: '', dosis: '', via: 'Oral', frecuencia: '', horasProgramadas: '', fechaInicio: new Date().toISOString().split('T')[0] });
+    setMedicacionDialogOpen(true);
+  };
+
+  const openEditMedicacion = (m: Medicacion) => {
+    setEditingMedicacion(m);
+    setMedicacionForm({ medicamento: m.medicamento, dosis: m.dosis, via: m.via, frecuencia: m.frecuencia, horasProgramadas: m.horasProgramadas.join(', '), fechaInicio: m.fechaInicio });
+    setMedicacionDialogOpen(true);
+  };
+
+  const handleSaveMedicacion = async () => {
+    if (!medicacionForm.medicamento.trim() || !medicacionForm.dosis.trim()) return;
+    const horas = medicacionForm.horasProgramadas.split(',').map(h => h.trim()).filter(Boolean);
+    // Find the first active hospitalization for this pet
+    const activeHosp = hospitalizaciones.find(h => h.estado === 'hospitalizado');
+    if (!activeHosp) {
+      alert('No hay hospitalizaciones activas para agregar medicación');
+      return;
+    }
+    const data = {
+      hospitalizacionId: activeHosp.id,
+      medicamento: medicacionForm.medicamento.trim(),
+      dosis: medicacionForm.dosis.trim(),
+      via: medicacionForm.via,
+      frecuencia: medicacionForm.frecuencia,
+      horasProgramadas: horas,
+      fechaInicio: medicacionForm.fechaInicio,
+      fechaFin: null,
+      tomas: [],
+    };
+    if (editingMedicacion) {
+      // Update: delete old and create new (since medicaciones are tied to hospitalization)
+      await MedicacionRepository.delete(editingMedicacion.id);
+      await MedicacionRepository.create(data);
+    } else {
+      await MedicacionRepository.create(data);
+    }
+    const updated = await MedicacionRepository.getByMascota(mascota!.id);
+    setMedicaciones(updated);
+    setMedicacionDialogOpen(false);
+  };
+
+  const handleDeleteMedicacion = async (id: string) => {
+    await MedicacionRepository.delete(id);
+    const updated = await MedicacionRepository.getByMascota(mascota!.id);
+    setMedicaciones(updated);
+  };
 
   const handleAISummary = async () => {
     if (!mascota) return;
@@ -210,7 +375,9 @@ export default function MascotaDetailPage() {
           <TabsTrigger value="timeline" className="gap-1.5"><TrendingUp className="h-3.5 w-3.5" /> Línea de tiempo</TabsTrigger>
           <TabsTrigger value="vacunas" className="gap-1.5"><Syringe className="h-3.5 w-3.5" /> Carnet de vacunas</TabsTrigger>
           <TabsTrigger value="peso" className="gap-1.5"><TrendingUp className="h-3.5 w-3.5" /> Gráfica de peso</TabsTrigger>
-          {isClinical && <TabsTrigger value="tratamientos" className="gap-1.5"><Pill className="h-3.5 w-3.5" /> Tratamientos</TabsTrigger>}
+          {isClinical && <TabsTrigger value="tratamientos" className="gap-1.5"><Pill className="h-3.5 w-3.5" /> Tratamientos ({tratamientos.length})</TabsTrigger>}
+          <TabsTrigger value="desparasitaciones" className="gap-1.5"><Pill className="h-3.5 w-3.5" /> Desparasitaciones ({desparasitaciones.length})</TabsTrigger>
+          {isClinical && <TabsTrigger value="hospitalizacion" className="gap-1.5"><HeartPulse className="h-3.5 w-3.5" /> Hospitalización ({hospitalizaciones.length})</TabsTrigger>}
           {isClinical && <TabsTrigger value="casos" className="gap-1.5"><ClipboardList className="h-3.5 w-3.5" /> Casos</TabsTrigger>}
           {isClinical && <TabsTrigger value="auditoria" className="gap-1.5"><ClipboardList className="h-3.5 w-3.5" /> Auditoría ({auditLogs.length})</TabsTrigger>}
         </TabsList>
@@ -269,10 +436,51 @@ export default function MascotaDetailPage() {
                           {diasParaProxima <= 0 ? 'Vencida' : `${diasParaProxima} días`}
                         </Badge>
                       </div>
+                      {isClinical && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0" onClick={() => handleDeleteVacuna(vac.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   );
                 })}
                 {vacunas.length === 0 && <p className="text-center text-muted-foreground py-8">Sin vacunas registradas</p>}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Desparasitaciones */}
+        <TabsContent value="desparasitaciones">
+          <Card>
+            <CardContent className="p-0">
+              <div className="divide-y divide-border/30">
+                {desparasitaciones.map((d) => {
+                  const diasParaProxima = Math.ceil((new Date(d.proximaDosis).getTime() - new Date('2026-10-15').getTime()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <div key={d.id} className="flex items-center gap-4 p-4">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0"><Pill className="h-5 w-5 text-amber-500" /></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{d.producto}</p>
+                        <p className="text-xs text-muted-foreground">Dosis: {d.dosis}</p>
+                        <p className="text-xs text-muted-foreground">Aplicada: {formatDate(d.fecha)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">Próxima dosis</p>
+                        <p className="text-sm font-medium">{formatDate(d.proximaDosis)}</p>
+                        <Badge variant={diasParaProxima <= 30 ? 'destructive' : 'secondary'} className="text-[10px] mt-1">
+                          {diasParaProxima <= 0 ? 'Vencida' : `${diasParaProxima} días`}
+                        </Badge>
+                      </div>
+                      {isClinical && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0" onClick={() => handleDeleteDesparasitacion(d.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+                {desparasitaciones.length === 0 && <p className="text-center text-muted-foreground py-8">Sin desparasitaciones registradas</p>}
               </div>
             </CardContent>
           </Card>
@@ -304,6 +512,68 @@ export default function MascotaDetailPage() {
         {isClinical && (
         <TabsContent value="tratamientos">
           <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle className="text-base">Tratamientos / Recetas</CardTitle>
+              <Dialog open={tratamientoDialogOpen} onOpenChange={setTratamientoDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="gap-1.5" onClick={openNewTratamiento}><Plus className="h-3.5 w-3.5" /> Nuevo</Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>{editingTratamiento ? 'Editar Tratamiento' : 'Nuevo Tratamiento'}</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Nombre del tratamiento *</Label>
+                        <Input value={tratamientoForm.nombre} onChange={(e) => setTratamientoForm({ ...tratamientoForm, nombre: e.target.value })} placeholder="Ej: Meloxicam 1.5mg/ml" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Fecha</Label>
+                        <Input type="date" value={tratamientoForm.fecha} onChange={(e) => setTratamientoForm({ ...tratamientoForm, fecha: e.target.value })} />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Dosis *</Label>
+                      <Input value={tratamientoForm.dosis} onChange={(e) => setTratamientoForm({ ...tratamientoForm, dosis: e.target.value })} placeholder="Ej: 0.1mg/kg PO cada 24h" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Duración</Label>
+                      <Input value={tratamientoForm.duracion} onChange={(e) => setTratamientoForm({ ...tratamientoForm, duracion: e.target.value })} placeholder="Ej: 30 días, Continuo, Único" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Veterinario</Label>
+                        <Select value={tratamientoForm.veterinarioId} onValueChange={(v) => setTratamientoForm({ ...tratamientoForm, veterinarioId: v })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {veterinarios.map(vet => (
+                              <SelectItem key={vet.id} value={vet.id}>{vet.nombre}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Vincular a Caso</Label>
+                        <Select value={tratamientoForm.casoId || 'none'} onValueChange={(v) => setTratamientoForm({ ...tratamientoForm, casoId: v === 'none' ? '' : v })}>
+                          <SelectTrigger><SelectValue placeholder="Sin caso" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sin caso</SelectItem>
+                            {casos.map(c => <SelectItem key={c.id} value={c.id}>{c.motivo}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setTratamientoDialogOpen(false)}>Cancelar</Button>
+                    <Button onClick={handleSaveTratamiento} disabled={!tratamientoForm.nombre.trim() || !tratamientoForm.dosis.trim()}>
+                      {editingTratamiento ? 'Guardar cambios' : 'Crear tratamiento'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-border/30">
                 {tratamientos.map((t) => (
@@ -312,14 +582,178 @@ export default function MascotaDetailPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{t.nombre}</p>
                       <p className="text-xs text-muted-foreground">{t.dosis} - {t.duracion}</p>
+                      {t.casoId && <p className="text-[10px] text-muted-foreground mt-0.5">Caso: {casos.find(c => c.id === t.casoId)?.motivo || 'N/A'}</p>}
                     </div>
                     <span className="text-xs text-muted-foreground">{formatDate(t.fecha)}</span>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditTratamiento(t)}>
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { if (confirm('¿Eliminar este tratamiento?')) handleDeleteTratamiento(t.id); }}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
                 {tratamientos.length === 0 && <p className="text-center text-muted-foreground py-8">Sin tratamientos</p>}
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+        )}
+
+        {/* Hospitalización / Medicación */}
+        {isClinical && (
+        <TabsContent value="hospitalizacion">
+          <div className="space-y-4">
+            {hospitalizaciones.map((hosp) => {
+              const hospMeds = medicaciones.filter(m => m.hospitalizacionId === hosp.id);
+              return (
+                <Card key={hosp.id}>
+                  <CardHeader className="flex-row items-center justify-between pb-3">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <HeartPulse className="h-4 w-4 text-orange-500" />
+                        {hosp.motivo}
+                        <Badge className={`text-[10px] ${ESTADOS_HOSPITALIZACION[hosp.estado].color}`}>{ESTADOS_HOSPITALIZACION[hosp.estado].label}</Badge>
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground mt-1">Jaula: {hosp.jaulaArea} - Ingreso: {formatDateTime(hosp.fechaIngreso)}</p>
+                    </div>
+                    {hosp.estado === 'hospitalizado' && (
+                      <Dialog open={medicacionDialogOpen} onOpenChange={setMedicacionDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button size="sm" className="gap-1.5" onClick={() => {
+                            setEditingMedicacion(null);
+                            setMedicacionForm({ medicamento: '', dosis: '', via: 'Oral', frecuencia: '', horasProgramadas: '', fechaInicio: new Date().toISOString().split('T')[0] });
+                            setMedicacionDialogOpen(true);
+                          }}>
+                            <Plus className="h-3.5 w-3.5" /> Agregar medicación
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-lg">
+                          <DialogHeader>
+                            <DialogTitle>{editingMedicacion ? 'Editar Medicación' : 'Nueva Medicación'}</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1.5">
+                                <Label>Medicamento *</Label>
+                                <Input value={medicacionForm.medicamento} onChange={(e) => setMedicacionForm({ ...medicacionForm, medicamento: e.target.value })} placeholder="Ej: Tramadol 50mg" />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label>Vía</Label>
+                                <Select value={medicacionForm.via} onValueChange={(v) => setMedicacionForm({ ...medicacionForm, via: v })}>
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Oral">Oral</SelectItem>
+                                    <SelectItem value="IV">IV</SelectItem>
+                                    <SelectItem value="SC">SC</SelectItem>
+                                    <SelectItem value="IM">IM</SelectItem>
+                                    <SelectItem value="Tópica">Tópica</SelectItem>
+                                    <SelectItem value="Inhalatoria">Inhalatoria</SelectItem>
+                                    <SelectItem value="Subcutánea">Subcutánea</SelectItem>
+                                    <SelectItem value="Inyectable">Inyectable</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label>Dosis *</Label>
+                              <Input value={medicacionForm.dosis} onChange={(e) => setMedicacionForm({ ...medicacionForm, dosis: e.target.value })} placeholder="Ej: 2mg/kg" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label>Frecuencia</Label>
+                              <Input value={medicacionForm.frecuencia} onChange={(e) => setMedicacionForm({ ...medicacionForm, frecuencia: e.target.value })} placeholder="Ej: Cada 8h, Cada 12h, Continuo" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label>Horas programadas (separadas por coma)</Label>
+                              <Input value={medicacionForm.horasProgramadas} onChange={(e) => setMedicacionForm({ ...medicacionForm, horasProgramadas: e.target.value })} placeholder="Ej: 08:00, 16:00, 00:00" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label>Fecha inicio</Label>
+                              <Input type="date" value={medicacionForm.fechaInicio} onChange={(e) => setMedicacionForm({ ...medicacionForm, fechaInicio: e.target.value })} />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setMedicacionDialogOpen(false)}>Cancelar</Button>
+                            <Button onClick={handleSaveMedicacion} disabled={!medicacionForm.medicamento.trim() || !medicacionForm.dosis.trim()}>
+                              {editingMedicacion ? 'Guardar cambios' : 'Crear medicación'}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {hosp.estado === 'hospitalizado' && (
+                      <div className="mb-3 p-2 bg-orange-500/10 rounded-lg border border-orange-500/20">
+                        <p className="text-xs text-orange-700 dark:text-orange-400 font-medium">Hospitalización activa - {hospMeds.length} medicación(es)</p>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      {hospMeds.map((med) => (
+                        <div key={med.id} className="p-3 rounded-lg bg-accent/20 border border-border/30">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Pill className="h-4 w-4 text-violet-500" />
+                              <p className="font-medium text-sm">{med.medicamento}</p>
+                              <Badge variant="outline" className="text-[10px]">{med.via}</Badge>
+                            </div>
+                            <div className="flex gap-1">
+                              {hosp.estado === 'hospitalizado' && (
+                                <>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditMedicacion(med)}>
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if (confirm('¿Eliminar esta medicación?')) handleDeleteMedicacion(med.id); }}>
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted-foreground space-y-0.5">
+                            <p><span className="font-medium">Dosis:</span> {med.dosis}</p>
+                            <p><span className="font-medium">Frecuencia:</span> {med.frecuencia}</p>
+                            <p><span className="font-medium">Horas:</span> {med.horasProgramadas.join(', ')}</p>
+                            <p><span className="font-medium">Período:</span> {formatDate(med.fechaInicio)}{med.fechaFin ? ` - ${formatDate(med.fechaFin)}` : ' - En curso'}</p>
+                            {med.tomas && med.tomas.length > 0 && (
+                              <div className="mt-2 pt-2 border-t">
+                                <p className="font-medium mb-1">Tomas registradas ({med.tomas.filter(t => t.administrada).length}/{med.tomas.length})</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {med.tomas.map((toma, idx) => (
+                                    <Badge key={idx} variant={toma.administrada ? 'default' : 'outline'} className="text-[10px]">
+                                      {toma.fecha} {toma.hora} {toma.administrada ? `(${toma.horaReal || 'N/A'})` : 'Pendiente'}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {hospMeds.length === 0 && <p className="text-sm text-muted-foreground py-2">Sin medicaciones registradas</p>}
+                    </div>
+                    {hosp.estado === 'alta' && (
+                      <div className="mt-3 p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400">Paciente dado de alta el {formatDateTime(hosp.fechaAlta || '')}</p>
+                        {hosp.resumenAlta && <p className="text-xs text-muted-foreground mt-1">{hosp.resumenAlta}</p>}
+                        {hosp.indicacionesAlta && <p className="text-xs text-muted-foreground mt-1">Indicaciones: {hosp.indicacionesAlta}</p>}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+            {hospitalizaciones.length === 0 && (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  <HeartPulse className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                  <p>Sin hospitalizaciones registradas</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </TabsContent>
         )}
 

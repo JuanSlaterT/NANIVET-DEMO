@@ -83,17 +83,8 @@ export default function LandingPage() {
       <header className="border-b border-border/50 sticky top-0 z-50 bg-background/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 group">
-            <div className="relative">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/25 group-hover:shadow-primary/40 transition-shadow">
-                <PawPrint className="h-5 w-5 text-white" />
-              </div>
-              <Sparkles className="absolute -top-1 -right-1 h-3 w-3 text-amber-400 animate-spin" style={{ animationDuration: '3s' }} />
-            </div>
-            <div>
-              <h1 className="font-bold text-lg leading-tight tracking-tight">NANIVET</h1>
-              <p className="text-[10px] text-primary/70 leading-tight font-medium">Clínica Veterinaria</p>
-            </div>
-          </Link>
+              <img src="/logo.svg" alt="NANIVET Logo" className="h-11 w-auto" />
+            </Link>
           <div className="flex items-center gap-2 sm:gap-3">
             {mounted && (
               <Button
@@ -478,10 +469,7 @@ export default function LandingPage() {
             {/* Brand */}
             <div className="col-span-2 lg:col-span-1">
               <Link href="/" className="flex items-center gap-2 mb-3">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
-                  <PawPrint className="h-4 w-4 text-white" />
-                </div>
-                <span className="font-bold">NANIVET</span>
+                <img src="/logo.svg" alt="NANIVET Logo" className="h-9 w-auto" />
               </Link>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Clínica Veterinaria en Esmeraldas, Ecuador. Cuidamos a tus mascotas como si fueran nuestras.

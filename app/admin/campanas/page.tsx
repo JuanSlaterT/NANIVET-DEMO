@@ -48,8 +48,8 @@ export default function CampanasPage() {
     setPlantilla(PLANTILLAS_CAMPANA[segmentoActivo]);
     (async () => {
       setCalculando(true);
-      const dests = await CampanaRepository.calcularSegmento(segmentoActivo);
-      setDestinatarios(dests);
+      const segmentos = await CampanaRepository.calcularSegmentos();
+      setDestinatarios(segmentos[segmentoActivo] || []);
       setCalculando(false);
     })();
   }, [segmentoActivo]);

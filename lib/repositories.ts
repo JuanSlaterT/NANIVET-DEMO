@@ -1,905 +1,958 @@
 // Capa de repositorios para NANIVET
-// Todos los datos son mock (en memoria). Esta capa permite reemplazar
-// fácilmente por una implementación con BD real en el futuro.
+// Conectada al backend API REST. Los datos mock se mantienen en mock-data.ts
+// pero ya no se usan aquí.
 
-import {
-  usuarios, veterinarios, horariosBloqueados,
-  clientes, mascotas, citas, casosClinicos,
-  vacunas, tratamientos, desparasitaciones, cirugias, examenes,
-  pesosRegistrados,
-  auditLogs, encuestas, hospitalizaciones, medicaciones, evoluciones, campanaEnvios,
-} from './mock-data';
+import { api } from './api-client';
 import type {
-  UsuarioAuth, Veterinario, HorarioBloqueado,
+  UsuarioAuth, Veterinario, HorarioBloqueado, Staff,
   Cliente, Mascota, Cita, CasoClinico,
   Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, PesoRegistrado,
-  AuditLog, Encuesta, Hospitalizacion, Medicacion, EvolucionDiaria, CampanaEnvio,
+  AuditLog, Hospitalizacion, Medicacion, EvolucionDiaria, CampanaEnvio, PuntuacionCita,
+  CatalogoVacuna, CatalogoDesparasitacion,
+  SOAP,
 } from './models';
-import { genId, genToken, ahora, LIMITE_HORAS_CANCELAR } from './constants';
+import type { Rol, EstadoCita, TipoServicio } from './constants';
+import { LIMITE_HORAS_CANCELAR } from './constants';
 
-// Simular latencia mínima
-function delay(ms = 50): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// ==================== HELPER ====================
 
-// ==================== AUDIT HELPER ====================
-function logAudit(entry: Omit<AuditLog, 'id' | 'fechaHora'>): void {
-  auditLogs.push({ ...entry, id: genId('aud'), fechaHora: ahora() });
+/** Extract data from API response or throw on error */
+async function unwrap<T>(response: Awaited<ReturnType<typeof api.fetchApi<T>>>): Promise<T> {
+  if (response.error) {
+    const err = new Error(response.error.message);
+    (err as any).code = response.error.code;
+    throw err;
+  }
+  return response.data as T;
 }
 
 // ==================== AUTH REPOSITORY ====================
 export const AuthRepository = {
   async login(email: string, password: string): Promise<UsuarioAuth | null> {
-    await delay();
-    const user = usuarios.find(
-      (u) => u.email === email && u.password === password
-    );
-    return user ? { ...user } : null;
+    const res = await api.login({ email, password });
+    if (res.error) return null;
+    return res.data?.user ?? null;
   },
 
-  getById(id: string): UsuarioAuth | undefined {
-    return usuarios.find((u) => u.id === id);
+  async getCurrentUser(): Promise<UsuarioAuth | null> {
+    const res = await api.getUser();
+    if (res.error) return null;
+    return res.data ?? null;
+  },
+};
+
+// ==================== STAFF REPOSITORY ====================
+export const StaffRepository = {
+  async getAll(): Promise<Staff[]> {
+    const res = await api.getStaff();
+    return res.error ? [] : (res.data as Staff[]);
+  },
+
+  getById(id: string): Promise<Staff | undefined> {
+    return api.getStaffById(id).then(r => r.error ? undefined : (r.data as Staff));
+  },
+
+  async getByEmail(email: string): Promise<Staff | undefined> {
+    try {
+      const res = await api.getStaffByEmail(email);
+      return res.error ? undefined : (res.data as Staff);
+    } catch {
+      return undefined;
+    }
+  },
+
+  async create(data: Omit<Staff, 'id'>): Promise<Staff> {
+    const res = await api.createStaff(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Staff;
+  },
+
+  async update(id: string, data: Partial<Staff>): Promise<Staff | null> {
+    const res = await api.updateStaff(id, data);
+    if (res.error) return null;
+    return res.data as Staff;
+  },
+
+  async toggleActivo(id: string, activo: boolean): Promise<Staff | null> {
+    const res = await api.toggleStaffActivo(id, activo);
+    if (res.error) return null;
+    return res.data as Staff;
+  },
+
+  async delete(id: string): Promise<void> {
+    await api.deleteStaff(id);
   },
 };
 
 // ==================== VETERINARIO REPOSITORY ====================
 export const VeterinarioRepository = {
   async getAll(): Promise<Veterinario[]> {
-    await delay();
-    return [...veterinarios];
+    const res = await api.getVeterinarios();
+    if (res.error) return [];
+    
+    // Normalizar datos del backend (camelCase) al formato del frontend
+    const rawVets = res.data as any[];
+    return rawVets.map((v: any) => {
+      // Backend envía todo en camelCase plano: horarioInicio, diasSemana, etc.
+      if (v.horarioInicio != null) {
+        // Normalizar "08:00:00" → "08:00"
+        const normalizeTime = (t: string) => t && t.includes(':') ? t.slice(0, 5) : t;
+        // Días ya vienen en formato JS nativo (0=Dom, 1=Lun, ..., 6=Sáb) - mismo que el frontend
+        return {
+          id: v.id,
+          nombre: v.nombre || v.staffNombre,
+          especialidad: v.especialidad,
+          telefono: v.telefono || v.staffTelefono,
+          horario: {
+            inicio: normalizeTime(v.horarioInicio),
+            fin: normalizeTime(v.horarioFin),
+            dias: Array.isArray(v.diasSemana) ? v.diasSemana.filter((d: number) => typeof d === 'number' && d >= 0 && d <= 6) : [1,2,3,4,5],
+            intervalo: v.intervaloMinutos || 30
+          }
+        };
+      }
+      // Mock data: ya viene en formato anidado
+      return v as Veterinario;
+    });
   },
 
-  getById(id: string): Veterinario | undefined {
-    return veterinarios.find((v) => v.id === v.id);
+  getById(id: string): Promise<Veterinario | undefined> {
+    return api.getVeterinarioById(id).then(r => {
+      if (r.error) return undefined;
+      const v = r.data as any;
+      if (v.horarioInicio != null) {
+        const normalizeTime = (t: string) => t && t.includes(':') ? t.slice(0, 5) : t;
+        // Días ya vienen en formato JS nativo (0=Dom, 1=Lun, ..., 6=Sáb) - mismo que el frontend
+        return {
+          id: v.id,
+          nombre: v.nombre || v.staffNombre,
+          especialidad: v.especialidad,
+          telefono: v.telefono || v.staffTelefono,
+          horario: {
+            inicio: normalizeTime(v.horarioInicio),
+            fin: normalizeTime(v.horarioFin),
+            dias: Array.isArray(v.diasSemana) ? v.diasSemana.filter((d: number) => typeof d === 'number' && d >= 0 && d <= 6) : [1,2,3,4,5],
+            intervalo: v.intervaloMinutos || 30
+          }
+        } as Veterinario;
+      }
+      return v as Veterinario;
+    });
   },
 
-  async getBloqueos(veterinarioId?: string): Promise<HorarioBloqueado[]> {
-    await delay();
-    return horariosBloqueados.filter((b) => !veterinarioId || b.veterinarioId === veterinarioId);
+  async getBloqueos(veterinarioId: string): Promise<HorarioBloqueado[]> {
+    const res = await api.getBloqueos(veterinarioId);
+    return res.error ? [] : (res.data as HorarioBloqueado[]);
   },
 
   async addBloqueo(veterinarioId: string, fecha: string, motivo: string): Promise<HorarioBloqueado> {
-    await delay();
-    const bloqueo: HorarioBloqueado = { id: genId('blk'), veterinarioId, fecha, motivo };
-    horariosBloqueados.push(bloqueo);
-    return bloqueo;
+    const res = await api.createBloqueo(veterinarioId, fecha, motivo);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as HorarioBloqueado;
   },
 
   async removeBloqueo(id: string): Promise<void> {
-    await delay();
-    const idx = horariosBloqueados.findIndex((b) => b.id === id);
-    if (idx >= 0) horariosBloqueados.splice(idx, 1);
+    await api.deleteBloqueo(id);
   },
 };
 
 // ==================== CLIENTE REPOSITORY ====================
 export const ClienteRepository = {
   async getAll(): Promise<Cliente[]> {
-    await delay();
-    return [...clientes];
+    const res = await api.getClientes();
+    return res.error ? [] : (res.data as Cliente[]);
   },
 
-  getById(id: string): Cliente | undefined {
-    return clientes.find((c) => c.id === id);
+  async getById(id: string): Promise<Cliente | undefined> {
+    const res = await api.getClientById(id);
+    return res.error ? undefined : (res.data as Cliente);
   },
 
   async create(data: Omit<Cliente, 'id'>): Promise<Cliente> {
-    await delay();
-    const nuevo: Cliente = { ...data, id: genId('cli') };
-    clientes.push(nuevo);
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'crear', entidad: 'Cliente', entidadId: nuevo.id, valoresDespues: { nombre: nuevo.nombre, apellido: nuevo.apellido } as Record<string, unknown> });
-    return nuevo;
+    const res = await api.createClient(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Cliente;
   },
 
   async update(id: string, data: Partial<Cliente>): Promise<Cliente | null> {
-    await delay();
-    const idx = clientes.findIndex((c) => c.id === id);
-    if (idx < 0) return null;
-    const antes = { ...clientes[idx] };
-    clientes[idx] = { ...clientes[idx], ...data, id };
-    const diff = Object.keys(data).filter(k => k !== 'id').map(k => ({
-      campo: k,
-      antes: JSON.stringify((antes as Record<string, unknown>)[k]),
-      despues: JSON.stringify((data as Record<string, unknown>)[k]),
-    }));
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'editar', entidad: 'Cliente', entidadId: id, diff });
-    return clientes[idx];
+    const res = await api.updateClient(id, data);
+    if (res.error) return null;
+    return res.data as Cliente;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = clientes.findIndex((c) => c.id === id);
-    if (idx < 0) return false;
-    const tieneMascotas = mascotas.some((m) => m.clienteId === id);
-    if (tieneMascotas) return false;
-    clientes.splice(idx, 1);
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'eliminar', entidad: 'Cliente', entidadId: id });
-    return true;
+    try {
+      await api.deleteClient(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   async search(query: string): Promise<Cliente[]> {
-    await delay();
-    const q = query.toLowerCase();
-    return clientes.filter(
-      (c) =>
-        c.nombre.toLowerCase().includes(q) ||
-        c.apellido.toLowerCase().includes(q) ||
-        c.cedula.includes(q) ||
-        c.telefono.includes(q)
-    );
+    const res = await api.searchClientes(query);
+    return res.error ? [] : (res.data as Cliente[]);
   },
 
   async revocarConsentimiento(id: string): Promise<Cliente | null> {
-    await delay();
-    const idx = clientes.findIndex((c) => c.id === id);
-    if (idx < 0) return null;
-    clientes[idx].consentimientoDatos = { aceptado: false, fechaHora: null, versionAviso: null };
-    clientes[idx].consentimientoComunicaciones = { aceptado: false, fechaHora: null };
-    clientes[idx].fechaRevocacion = ahora();
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'revocar', entidad: 'Cliente', entidadId: id, valoresDespues: { fechaRevocacion: clientes[idx].fechaRevocacion } as Record<string, unknown> });
-    return clientes[idx];
+    const res = await api.revokeConsentimiento(id);
+    if (res.error) return null;
+    return res.data as Cliente;
   },
 };
 
 // ==================== MASCOTA REPOSITORY ====================
 export const MascotaRepository = {
   async getAll(): Promise<Mascota[]> {
-    await delay();
-    return [...mascotas];
+    const res = await api.getMascotas();
+    return res.error ? [] : (res.data as Mascota[]);
   },
 
   async getByCliente(clienteId: string): Promise<Mascota[]> {
-    await delay();
-    return mascotas.filter((m) => m.clienteId === clienteId);
+    const res = await api.getMascotas({ clienteId });
+    return res.error ? [] : (res.data as Mascota[]);
   },
 
-  getById(id: string): Mascota | undefined {
-    return mascotas.find((m) => m.id === id);
+  async getById(id: string): Promise<Mascota | undefined> {
+    const res = await api.getMascotaById(id);
+    return res.error ? undefined : (res.data as Mascota);
   },
 
   async create(data: Omit<Mascota, 'id'>): Promise<Mascota> {
-    await delay();
-    const nuevo: Mascota = { ...data, id: genId('mas') };
-    mascotas.push(nuevo);
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'crear', entidad: 'Mascota', entidadId: nuevo.id, valoresDespues: { nombre: nuevo.nombre, especie: nuevo.especie } as Record<string, unknown> });
-    return nuevo;
+    const res = await api.createMascota(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Mascota;
   },
 
   async update(id: string, data: Partial<Mascota>): Promise<Mascota | null> {
-    await delay();
-    const idx = mascotas.findIndex((m) => m.id === id);
-    if (idx < 0) return null;
-    mascotas[idx] = { ...mascotas[idx], ...data, id };
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'editar', entidad: 'Mascota', entidadId: id });
-    return mascotas[idx];
+    const res = await api.updateMascota(id, data);
+    if (res.error) return null;
+    return res.data as Mascota;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = mascotas.findIndex((m) => m.id === id);
-    if (idx < 0) return false;
-    mascotas.splice(idx, 1);
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'eliminar', entidad: 'Mascota', entidadId: id });
-    return true;
+    try {
+      await api.deleteMascota(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   async search(query: string): Promise<Mascota[]> {
-    await delay();
-    const q = query.toLowerCase();
-    return mascotas.filter(
-      (m) =>
-        m.nombre.toLowerCase().includes(q) ||
-        m.especie.toLowerCase().includes(q) ||
-        (m.raza || '').toLowerCase().includes(q)
-    );
+    const res = await api.searchMascotas(query);
+    return res.error ? [] : (res.data as Mascota[]);
   },
 };
 
 // ==================== CITA REPOSITORY ====================
 export const CitaRepository = {
   async getAll(): Promise<Cita[]> {
-    await delay();
-    return [...citas];
+    const res = await api.getCitas();
+    return res.error ? [] : (res.data as Cita[]);
   },
 
   async getByFecha(fecha: string): Promise<Cita[]> {
-    await delay();
-    return citas.filter((c) => c.fechaHora.startsWith(fecha));
+    const res = await api.getCitas({ fecha });
+    return res.error ? [] : (res.data as Cita[]);
   },
 
   async getByVeterinario(veterinarioId: string): Promise<Cita[]> {
-    await delay();
-    return citas.filter((c) => c.veterinarioId === veterinarioId);
+    const res = await api.getCitas({ veterinarioId });
+    return res.error ? [] : (res.data as Cita[]);
   },
 
   async getByMascota(mascotaId: string): Promise<Cita[]> {
-    await delay();
-    return citas.filter((c) => c.mascotaId === mascotaId);
+    const res = await api.getCitas({ mascotaId });
+    return res.error ? [] : (res.data as Cita[]);
   },
 
-  getById(id: string): Cita | undefined {
-    return citas.find((c) => c.id === id);
+  async getById(id: string): Promise<Cita | undefined> {
+    const res = await api.getCitaById(id);
+    return res.error ? undefined : (res.data as Cita);
   },
 
-  getByToken(token: string): Cita | undefined {
-    return citas.find((c) => c.token === token);
+  async getByToken(token: string): Promise<Cita | undefined> {
+    const res = await api.getCitaByToken(token);
+    return res.error ? undefined : (res.data as Cita);
   },
 
   async create(data: Omit<Cita, 'id' | 'token'>): Promise<Cita> {
-    await delay();
-    const nuevo: Cita = { ...data, id: genId('cit'), token: genToken() };
-    citas.push(nuevo);
-    logAudit({ usuario: 'Sistema', rol: 'recepcionista', accion: 'crear', entidad: 'Cita', entidadId: nuevo.id, valoresDespues: { mascotaId: nuevo.mascotaId, motivo: nuevo.motivo } as Record<string, unknown> });
-
-    // Si es una cita de cirugía y está confirmada o atendida, crear hospitalización automática
-    if (nuevo.tipoServicio === 'cirugia' && (nuevo.estado === 'confirmada' || nuevo.estado === 'atendida')) {
-      const yaHospitalizada = hospitalizaciones.some(h => h.citaId === nuevo.id && h.estado === 'hospitalizado');
-      if (!yaHospitalizada) {
-        const jaulasDisponibles = ['C-01', 'C-02', 'C-03', 'C-04', 'C-05', 'C-06'];
-        const jaulasOcupadas = hospitalizaciones.filter(h => h.estado === 'hospitalizado').map(h => h.jaulaArea);
-        const jaula = jaulasDisponibles.find(j => !jaulasOcupadas.includes(j)) || 'C-01';
-        const nuevaHospitalizacion: Hospitalizacion = {
-          id: genId('hos'),
-          mascotaId: nuevo.mascotaId,
-          casoId: null,
-          veterinarioId: nuevo.veterinarioId,
-          citaId: nuevo.id,
-          fechaIngreso: nuevo.fechaHora,
-          fechaAlta: null,
-          jaulaArea: jaula,
-          motivo: `Post-operatorio: ${nuevo.motivo}`,
-          estado: 'hospitalizado',
-        };
-        hospitalizaciones.push(nuevaHospitalizacion);
-        logAudit({
-          usuario: 'Sistema',
-          rol: 'admin',
-          accion: 'alta_hospitalizacion',
-          entidad: 'Hospitalizacion',
-          entidadId: nuevaHospitalizacion.id,
-          valoresDespues: { mascotaId: nuevaHospitalizacion.mascotaId, motivo: nuevaHospitalizacion.motivo, citaId: nuevo.id } as Record<string, unknown>,
-        });
-      }
-    }
-
-    return nuevo;
+    const res = await api.createCita(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Cita;
   },
 
   async update(id: string, data: Partial<Cita>): Promise<Cita | null> {
-    await delay();
-    const idx = citas.findIndex((c) => c.id === id);
-    if (idx < 0) return null;
-    const antes = { ...citas[idx] };
-    citas[idx] = { ...citas[idx], ...data, id };
-    const diff = Object.keys(data).filter(k => k !== 'id').map(k => ({
-      campo: k,
-      antes: JSON.stringify((antes as Record<string, unknown>)[k] ?? ''),
-      despues: JSON.stringify((data as Record<string, unknown>)[k] ?? ''),
-    }));
-    logAudit({ usuario: 'Sistema', rol: 'recepcionista', accion: 'editar', entidad: 'Cita', entidadId: id, diff });
-
-    // Si es una cita de cirugía y cambió a 'confirmada' o 'atendida', crear hospitalización automática
-    const nuevaCita = citas[idx];
-    if (nuevaCita.tipoServicio === 'cirugia' && (data.estado === 'confirmada' || data.estado === 'atendida')) {
-      const yaHospitalizada = hospitalizaciones.some(h => h.citaId === id && h.estado === 'hospitalizado');
-      if (!yaHospitalizada) {
-        const jaulasDisponibles = ['C-01', 'C-02', 'C-03', 'C-04', 'C-05', 'C-06'];
-        const jaulasOcupadas = hospitalizaciones.filter(h => h.estado === 'hospitalizado').map(h => h.jaulaArea);
-        const jaula = jaulasDisponibles.find(j => !jaulasOcupadas.includes(j)) || 'C-01';
-        const nuevaHospitalizacion: Hospitalizacion = {
-          id: genId('hos'),
-          mascotaId: nuevaCita.mascotaId,
-          casoId: null,
-          veterinarioId: nuevaCita.veterinarioId,
-          citaId: id,
-          fechaIngreso: nuevaCita.fechaHora,
-          fechaAlta: null,
-          jaulaArea: jaula,
-          motivo: `Post-operatorio: ${nuevaCita.motivo}`,
-          estado: 'hospitalizado',
-        };
-        hospitalizaciones.push(nuevaHospitalizacion);
-        logAudit({
-          usuario: 'Sistema',
-          rol: 'admin',
-          accion: 'alta_hospitalizacion',
-          entidad: 'Hospitalizacion',
-          entidadId: nuevaHospitalizacion.id,
-          valoresDespues: { mascotaId: nuevaHospitalizacion.mascotaId, motivo: nuevaHospitalizacion.motivo, citaId: id } as Record<string, unknown>,
-        });
-      }
-    }
-
-    return citas[idx];
+    const res = await api.updateCita(id, data);
+    if (res.error) return null;
+    return res.data as Cita;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = citas.findIndex((c) => c.id === id);
-    if (idx < 0) return false;
-    citas.splice(idx, 1);
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'eliminar', entidad: 'Cita', entidadId: id });
-    return true;
+    try {
+      await api.deleteCita(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   async getSlotsOcupados(veterinarioId: string, fecha: string): Promise<string[]> {
-    await delay();
-    return citas
-      .filter((c) => c.veterinarioId === veterinarioId && c.fechaHora.startsWith(fecha) && c.estado !== 'cancelada')
-      .map((c) => {
-        const d = new Date(c.fechaHora);
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-      });
+    const res = await api.getSlotsOcupados(veterinarioId, fecha);
+    if (res.error) return [];
+    // El backend devuelve { data: { ocupados: string[], bloqueado: boolean } }
+    const responseData = res.data as { ocupados: string[]; bloqueado: boolean } | null;
+    return responseData?.ocupados || [];
+  },
+
+  async getProximas(veterinarioId: string): Promise<any[]> {
+    const res = await api.getProximas(veterinarioId);
+    if (res.error) return [];
+    const data = res.data as { data?: any[] } | any[] | null;
+    const citas = Array.isArray(data) ? data : (data?.data || []);
+    return citas as any[];
   },
 
   // --- Gestión pública por token ---
   async confirmarPorToken(token: string): Promise<Cita | null> {
-    await delay();
-    const idx = citas.findIndex((c) => c.token === token);
-    if (idx < 0) return null;
-    if (citas[idx].estado === 'cancelada') return null;
-    citas[idx].estado = 'confirmada';
-    citas[idx].confirmadaPorCliente = true;
-    citas[idx].fechaConfirmacion = ahora();
-    citas[idx].ultimoCambioPor = 'cliente';
-    logAudit({ usuario: 'Cliente (token)', rol: 'cliente', accion: 'confirmar', entidad: 'Cita', entidadId: citas[idx].id, diff: [{ campo: 'estado', antes: 'pendiente', despues: 'confirmada' }] });
-    return citas[idx];
+    const res = await api.confirmByToken(token);
+    if (res.error) return null;
+    return res.data as Cita;
   },
 
   async cancelarPorToken(token: string, motivo: string): Promise<{ ok: boolean; cita: Cita | null; error?: string }> {
-    await delay();
-    const idx = citas.findIndex((c) => c.token === token);
-    if (idx < 0) return { ok: false, cita: null, error: 'Token no válido' };
-    const cita = citas[idx];
-    if (cita.estado === 'cancelada' || cita.estado === 'atendida') {
-      return { ok: false, cita: null, error: 'La cita ya no se puede cancelar' };
-    }
-    const fechaCita = new Date(cita.fechaHora);
-    const ahoraDate = new Date(ahora());
-    const horasDiff = (fechaCita.getTime() - ahoraDate.getTime()) / (1000 * 60 * 60);
-    if (horasDiff < LIMITE_HORAS_CANCELAR) {
-      return { ok: false, cita, error: `No se puede cancelar con menos de ${LIMITE_HORAS_CANCELAR}h de anticipación` };
-    }
-    citas[idx].estado = 'cancelada';
-    citas[idx].motivoCancelacion = motivo;
-    citas[idx].canceladaPorCliente = true;
-    citas[idx].ultimoCambioPor = 'cliente';
-    logAudit({ usuario: 'Cliente (token)', rol: 'cliente', accion: 'cancelar', entidad: 'Cita', entidadId: cita.id, diff: [{ campo: 'estado', antes: cita.estado, despues: 'cancelada' }] });
-    return { ok: true, cita: citas[idx] };
+    const res = await api.cancelByToken(token, motivo);
+    if (res.error) return { ok: false, cita: null, error: res.error.message };
+    return { ok: true, cita: res.data as Cita };
   },
 
   async reprogramarPorToken(token: string, nuevaFechaHora: string): Promise<{ ok: boolean; cita: Cita | null; error?: string }> {
-    await delay();
-    const idx = citas.findIndex((c) => c.token === token);
-    if (idx < 0) return { ok: false, cita: null, error: 'Token no válido' };
-    const cita = citas[idx];
-    if (cita.estado === 'cancelada' || cita.estado === 'atendida') {
-      return { ok: false, cita: null, error: 'La cita ya no se puede reprogramar' };
-    }
-    const fechaCita = new Date(cita.fechaHora);
-    const ahoraDate = new Date(ahora());
-    const horasDiff = (fechaCita.getTime() - ahoraDate.getTime()) / (1000 * 60 * 60);
-    if (horasDiff < LIMITE_HORAS_CANCELAR) {
-      return { ok: false, cita, error: `No se puede reprogramar con menos de ${LIMITE_HORAS_CANCELAR}h de anticipación` };
-    }
-    const antes = cita.fechaHora;
-    citas[idx].fechaHora = nuevaFechaHora;
-    citas[idx].ultimoCambioPor = 'cliente';
-    logAudit({ usuario: 'Cliente (token)', rol: 'cliente', accion: 'reprogramar', entidad: 'Cita', entidadId: cita.id, diff: [{ campo: 'fechaHora', antes, despues: nuevaFechaHora }] });
-    return { ok: true, cita: citas[idx] };
+    const res = await api.rescheduleByToken(token, nuevaFechaHora);
+    if (res.error) return { ok: false, cita: null, error: res.error.message };
+    return { ok: true, cita: res.data as Cita };
   },
 };
 
 // ==================== CASO CLÍNICO REPOSITORY ====================
+// Helper to transform flat soap fields from backend into nested soap object
+function transformCasoRow(row: any): CasoClinico | undefined {
+  if (!row) return undefined;
+  const base = {
+    id: row.id,
+    mascotaId: row.mascota_id || row.mascotaId,
+    motivo: row.motivo,
+    soap: {
+      subjetivo: row.soap_subjetivo || '',
+      objetivo: row.soap_objetivo || '',
+      analisis: row.soap_analisis || '',
+      plan: row.soap_plan || '',
+    },
+    diagnostico: row.diagnostico,
+    estado: row.estado,
+    fecha: row.fecha_hora_inicio || row.fecha || row.fecha_creacion,
+    veterinarioId: row.veterinario_id || row.veterinarioId,
+  };
+  // If soap is already an object (e.g., from mock data), keep it as-is
+  if (row.soap && typeof row.soap === 'object' && !row.soap_subjetivo) {
+    return { ...base, soap: row.soap };
+  }
+  return base;
+}
+
 export const CasoRepository = {
-  async getAll(): Promise<CasoClinico[]> {
-    await delay();
-    return [...casosClinicos];
+  async getAll(params?: Record<string, string>): Promise<CasoClinico[]> {
+    const res = await api.getCasos(params);
+    if (res.error) return [];
+    const data = res.data as any[];
+    return Array.isArray(data) ? data.map(transformCasoRow).filter(Boolean) : [];
   },
 
   async getByMascota(mascotaId: string): Promise<CasoClinico[]> {
-    await delay();
-    return casosClinicos.filter((c) => c.mascotaId === mascotaId);
+    const res = await api.getCasos({ mascotaId });
+    if (res.error) return [];
+    const data = res.data as any[];
+    return Array.isArray(data) ? data.map(transformCasoRow).filter(Boolean) : [];
   },
 
-  getById(id: string): CasoClinico | undefined {
-    return casosClinicos.find((c) => c.id === id);
+  async getById(id: string): Promise<CasoClinico | undefined> {
+    const res = await api.getCasoById(id);
+    if (res.error) return undefined;
+    return transformCasoRow(res.data);
   },
 
   async create(data: Omit<CasoClinico, 'id'>): Promise<CasoClinico> {
-    await delay();
-    const nuevo: CasoClinico = { ...data, id: genId('cas') };
-    casosClinicos.push(nuevo);
-    logAudit({ usuario: 'Sistema', rol: 'veterinario', accion: 'crear', entidad: 'CasoClinico', entidadId: nuevo.id, valoresDespues: { motivo: nuevo.motivo, mascotaId: nuevo.mascotaId } as Record<string, unknown> });
-    return nuevo;
+    const res = await api.createCaso(data);
+    if (res.error) throw new Error(res.error.message);
+    return transformCasoRow(res.data) as CasoClinico;
   },
 
   async update(id: string, data: Partial<CasoClinico>): Promise<CasoClinico | null> {
-    await delay();
-    const idx = casosClinicos.findIndex((c) => c.id === id);
-    if (idx < 0) return null;
-    casosClinicos[idx] = { ...casosClinicos[idx], ...data, id };
-    logAudit({ usuario: 'Sistema', rol: 'veterinario', accion: 'editar', entidad: 'CasoClinico', entidadId: id });
-    return casosClinicos[idx];
+    const res = await api.updateCaso(id, data);
+    if (res.error) return null;
+    return res.data as CasoClinico;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = casosClinicos.findIndex((c) => c.id === id);
-    if (idx < 0) return false;
-    casosClinicos.splice(idx, 1);
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'eliminar', entidad: 'CasoClinico', entidadId: id });
-    return true;
+    try {
+      await api.deleteCaso(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 
 // ==================== VACUNA REPOSITORY ====================
 export const VacunaRepository = {
-  async getAll(): Promise<Vacuna[]> {
-    await delay();
-    return [...vacunas];
+  async getAll(params?: Record<string, string>): Promise<Vacuna[]> {
+    const res = await api.getVacunas(params);
+    return res.error ? [] : (res.data as Vacuna[]);
   },
 
   async getByMascota(mascotaId: string): Promise<Vacuna[]> {
-    await delay();
-    return vacunas.filter((v) => v.mascotaId === mascotaId);
+    const res = await api.getVacunas({ mascotaId });
+    return res.error ? [] : (res.data as Vacuna[]);
   },
 
   async getByCaso(casoId: string): Promise<Vacuna[]> {
-    await delay();
-    return vacunas.filter((v) => v.casoId === casoId);
+    const res = await api.getVacunas({ casoId });
+    return res.error ? [] : (res.data as Vacuna[]);
   },
 
   async create(data: Omit<Vacuna, 'id'>): Promise<Vacuna> {
-    await delay();
-    const nueva: Vacuna = { ...data, id: genId('vac') };
-    vacunas.push(nueva);
-    logAudit({ usuario: 'Sistema', rol: 'veterinario', accion: 'crear', entidad: 'Vacuna', entidadId: nueva.id, valoresDespues: { nombre: nueva.nombre, mascotaId: nueva.mascotaId } as Record<string, unknown> });
-    return nueva;
+    const res = await api.createVacuna(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Vacuna;
+  },
+
+  async update(id: string, data: Partial<Vacuna>): Promise<Vacuna | null> {
+    const res = await api.updateVacuna(id, data);
+    if (res.error) return null;
+    return res.data as Vacuna;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = vacunas.findIndex((v) => v.id === id);
-    if (idx < 0) return false;
-    vacunas.splice(idx, 1);
-    logAudit({ usuario: 'Sistema', rol: 'admin', accion: 'eliminar', entidad: 'Vacuna', entidadId: id });
-    return true;
+    try {
+      await api.deleteVacuna(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   async getPorVencer(diasLimite: number = 30): Promise<Vacuna[]> {
-    await delay();
-    const hoy = new Date('2026-10-15');
-    const limite = new Date(hoy);
-    limite.setDate(limite.getDate() + diasLimite);
-    return vacunas.filter((v) => {
-      const prox = new Date(v.proximaDosis);
-      return prox >= hoy && prox <= limite;
-    });
+    const res = await api.getVacunas({ porVencer: String(diasLimite) });
+    return res.error ? [] : (res.data as Vacuna[]);
   },
 };
 
 // ==================== TRATAMIENTO REPOSITORY ====================
 export const TratamientoRepository = {
-  async getAll(): Promise<Tratamiento[]> {
-    await delay();
-    return [...tratamientos];
+  async getAll(params?: Record<string, string>): Promise<Tratamiento[]> {
+    const res = await api.getTratamientos(params);
+    return res.error ? [] : (res.data as Tratamiento[]);
   },
 
   async getByMascota(mascotaId: string): Promise<Tratamiento[]> {
-    await delay();
-    return tratamientos.filter((t) => t.mascotaId === mascotaId);
+    const res = await api.getTratamientos({ mascotaId });
+    return res.error ? [] : (res.data as Tratamiento[]);
   },
 
   async getByCaso(casoId: string): Promise<Tratamiento[]> {
-    await delay();
-    return tratamientos.filter((t) => t.casoId === casoId);
+    const res = await api.getTratamientos({ casoId });
+    return res.error ? [] : (res.data as Tratamiento[]);
   },
 
   async create(data: Omit<Tratamiento, 'id'>): Promise<Tratamiento> {
-    await delay();
-    const nuevo: Tratamiento = { ...data, id: genId('tra') };
-    tratamientos.push(nuevo);
-    return nuevo;
+    const res = await api.createTratamiento(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Tratamiento;
+  },
+
+  async update(id: string, data: Partial<Tratamiento>): Promise<Tratamiento | null> {
+    const res = await api.updateTratamiento(id, data);
+    if (res.error) return null;
+    return res.data as Tratamiento;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = tratamientos.findIndex((t) => t.id === id);
-    if (idx < 0) return false;
-    tratamientos.splice(idx, 1);
-    return true;
+    try {
+      await api.deleteTratamiento(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 
 // ==================== DESPARASITACIÓN REPOSITORY ====================
 export const DesparasitacionRepository = {
-  async getAll(): Promise<Desparasitacion[]> {
-    await delay();
-    return [...desparasitaciones];
+  async getAll(params?: Record<string, string>): Promise<Desparasitacion[]> {
+    const res = await api.getDesparasitaciones(params);
+    if (res.error) return [];
+    const raw = res.data as Record<string, unknown>[];
+    return raw.map((item: Record<string, unknown>) => ({
+      id: item.id as string,
+      mascotaId: (item.mascota_id ?? item.mascotaId) as string,
+      casoId: (item.caso_id ?? item.casoId ?? null) as string | null,
+      producto: item.producto as string,
+      dosis: item.dosis as string,
+      fecha: item.fecha as string,
+      proximaDosis: (item.proxima_dosis ?? item.proximaDosis) as string,
+      veterinarioId: (item.veterinario_id ?? item.veterinarioId) as string,
+    }));
   },
 
   async getByMascota(mascotaId: string): Promise<Desparasitacion[]> {
-    await delay();
-    return desparasitaciones.filter((d) => d.mascotaId === mascotaId);
+    const res = await api.getDesparasitaciones({ mascotaId });
+    if (res.error) return [];
+    const raw = res.data as Record<string, unknown>[];
+    return raw.map((item: Record<string, unknown>) => ({
+      id: item.id as string,
+      mascotaId: (item.mascota_id ?? item.mascotaId) as string,
+      casoId: (item.caso_id ?? item.casoId ?? null) as string | null,
+      producto: item.producto as string,
+      dosis: item.dosis as string,
+      fecha: item.fecha as string,
+      proximaDosis: (item.proxima_dosis ?? item.proximaDosis) as string,
+      veterinarioId: (item.veterinario_id ?? item.veterinarioId) as string,
+    }));
   },
 
   async getByCaso(casoId: string): Promise<Desparasitacion[]> {
-    await delay();
-    return desparasitaciones.filter((d) => d.casoId === casoId);
+    const res = await api.getDesparasitaciones({ casoId });
+    if (res.error) return [];
+    const raw = res.data as Record<string, unknown>[];
+    return raw.map((item: Record<string, unknown>) => ({
+      id: item.id as string,
+      mascotaId: (item.mascota_id ?? item.mascotaId) as string,
+      casoId: (item.caso_id ?? item.casoId ?? null) as string | null,
+      producto: item.producto as string,
+      dosis: item.dosis as string,
+      fecha: item.fecha as string,
+      proximaDosis: (item.proxima_dosis ?? item.proximaDosis) as string,
+      veterinarioId: (item.veterinario_id ?? item.veterinarioId) as string,
+    }));
   },
 
   async create(data: Omit<Desparasitacion, 'id'>): Promise<Desparasitacion> {
-    await delay();
-    const nueva: Desparasitacion = { ...data, id: genId('des') };
-    desparasitaciones.push(nueva);
-    return nueva;
+    const res = await api.createDesparasitacion(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Desparasitacion;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = desparasitaciones.findIndex((d) => d.id === id);
-    if (idx < 0) return false;
-    desparasitaciones.splice(idx, 1);
-    return true;
+    try {
+      await api.deleteDesparasitacion(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 
 // ==================== CIRUGÍA REPOSITORY ====================
 export const CirugiaRepository = {
-  async getAll(): Promise<Cirugia[]> {
-    await delay();
-    return [...cirugias];
+  async getAll(params?: Record<string, string>): Promise<Cirugia[]> {
+    const res = await api.getCirugias(params);
+    return res.error ? [] : (res.data as Cirugia[]);
   },
 
   async getByMascota(mascotaId: string): Promise<Cirugia[]> {
-    await delay();
-    return cirugias.filter((c) => c.mascotaId === mascotaId);
+    const res = await api.getCirugias({ mascotaId });
+    return res.error ? [] : (res.data as Cirugia[]);
   },
 
   async getByCaso(casoId: string): Promise<Cirugia[]> {
-    await delay();
-    return cirugias.filter((c) => c.casoId === casoId);
+    const res = await api.getCirugias({ casoId });
+    return res.error ? [] : (res.data as Cirugia[]);
   },
 
   async create(data: Omit<Cirugia, 'id'>): Promise<Cirugia> {
-    await delay();
-    const nueva: Cirugia = { ...data, id: genId('cir') };
-    cirugias.push(nueva);
-    return nueva;
+    const res = await api.createCirugia(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Cirugia;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = cirugias.findIndex((c) => c.id === id);
-    if (idx < 0) return false;
-    cirugias.splice(idx, 1);
-    return true;
+    try {
+      await api.deleteCirugia(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 
 // ==================== EXAMEN REPOSITORY ====================
 export const ExamenRepository = {
-  async getAll(): Promise<Examen[]> {
-    await delay();
-    return [...examenes];
+  async getAll(params?: Record<string, string>): Promise<Examen[]> {
+    const res = await api.getExamenes(params);
+    return res.error ? [] : (res.data as Examen[]);
   },
 
   async getByMascota(mascotaId: string): Promise<Examen[]> {
-    await delay();
-    return examenes.filter((e) => e.mascotaId === mascotaId);
+    const res = await api.getExamenes({ mascotaId });
+    return res.error ? [] : (res.data as Examen[]);
   },
 
   async getByCaso(casoId: string): Promise<Examen[]> {
-    await delay();
-    return examenes.filter((e) => e.casoId === casoId);
+    const res = await api.getExamenes({ casoId });
+    return res.error ? [] : (res.data as Examen[]);
   },
 
   async create(data: Omit<Examen, 'id'>): Promise<Examen> {
-    await delay();
-    const nuevo: Examen = { ...data, id: genId('exa') };
-    examenes.push(nuevo);
-    return nuevo;
+    const res = await api.createExamen(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Examen;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = examenes.findIndex((e) => e.id === id);
-    if (idx < 0) return false;
-    examenes.splice(idx, 1);
-    return true;
+    try {
+      await api.deleteExamen(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 
 // ==================== PESO REPOSITORY ====================
 export const PesoRepository = {
   async getByMascota(mascotaId: string): Promise<PesoRegistrado[]> {
-    await delay();
-    return pesosRegistrados
-      .filter((p) => p.mascotaId === mascotaId)
-      .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+    const res = await api.getPesos(mascotaId);
+    return res.error ? [] : (res.data as PesoRegistrado[]);
   },
 
   async create(data: Omit<PesoRegistrado, 'id'>): Promise<PesoRegistrado> {
-    await delay();
-    const nuevo: PesoRegistrado = { ...data, id: genId('pes') };
-    pesosRegistrados.push(nuevo);
-    return nuevo;
+    const res = await api.createPeso(data.mascotaId, data.peso, data.fecha);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as PesoRegistrado;
   },
 };
 
 // ==================== AUDIT LOG REPOSITORY ====================
 export const AuditRepository = {
-  async getAll(): Promise<AuditLog[]> {
-    await delay(80);
-    return [...auditLogs].sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
+  async getAll(params?: Record<string, string>): Promise<AuditLog[]> {
+    const res = await api.getAuditoria(params);
+    if (res.error) return [];
+    return (res.data as AuditLog[]).sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
   },
 
   async getByEntidad(entidad: string, entidadId?: string): Promise<AuditLog[]> {
-    await delay(80);
-    return auditLogs
-      .filter((a) => a.entidad === entidad && (!entidadId || a.entidadId === entidadId))
-      .sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
+    const res = await api.getAuditoriaEntidad(entidad, entidadId || '');
+    if (res.error) return [];
+    return (res.data as AuditLog[]).sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
   },
 
   async search(filters: { usuario?: string; accion?: string; entidad?: string; desde?: string; hasta?: string }): Promise<AuditLog[]> {
-    await delay(80);
-    return auditLogs
-      .filter((a) => {
-        if (filters.usuario && !a.usuario.toLowerCase().includes(filters.usuario.toLowerCase())) return false;
-        if (filters.accion && a.accion !== filters.accion) return false;
-        if (filters.entidad && a.entidad !== filters.entidad) return false;
-        if (filters.desde && a.fechaHora < filters.desde) return false;
-        if (filters.hasta && a.fechaHora > filters.hasta) return false;
-        return true;
-      })
-      .sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
-  },
-
-  log: logAudit,
-};
-
-// ==================== ENCUESTA REPOSITORY ====================
-export const EncuestaRepository = {
-  async getAll(): Promise<Encuesta[]> {
-    await delay();
-    return [...encuestas];
-  },
-
-  async getByCita(citaId: string): Promise<Encuesta | undefined> {
-    await delay();
-    return encuestas.find((e) => e.citaId === citaId);
-  },
-
-  getByToken(token: string): Encuesta | undefined {
-    return encuestas.find((e) => e.token === token);
-  },
-
-  async create(data: Omit<Encuesta, 'id' | 'token'>): Promise<Encuesta> {
-    await delay();
-    const nueva: Encuesta = { ...data, id: genId('enc'), token: genToken() };
-    encuestas.push(nueva);
-    return nueva;
-  },
-
-  async responder(token: string, calificacion: number, recomienda: boolean, comentario: string | null): Promise<Encuesta | null> {
-    await delay();
-    const idx = encuestas.findIndex((e) => e.token === token);
-    if (idx < 0) return null;
-    if (encuestas[idx].respondida) return null;
-    encuestas[idx].calificacion = calificacion;
-    encuestas[idx].recomienda = recomienda;
-    encuestas[idx].comentario = comentario;
-    encuestas[idx].fechaRespuesta = ahora();
-    encuestas[idx].respondida = true;
-    return encuestas[idx];
-  },
-
-  async getPromedio(): Promise<{ promedio: number; total: number; recomienda: number }> {
-    await delay();
-    const respondidas = encuestas.filter((e) => e.respondida);
-    if (respondidas.length === 0) return { promedio: 0, total: 0, recomienda: 0 };
-    const promedio = respondidas.reduce((sum, e) => sum + e.calificacion, 0) / respondidas.length;
-    const recomienda = respondidas.filter((e) => e.recomienda).length;
-    return { promedio, total: respondidas.length, recomienda };
+    const params: Record<string, string> = {};
+    if (filters.usuario) params.usuario = filters.usuario;
+    if (filters.accion) params.accion = filters.accion;
+    if (filters.entidad) params.entidad = filters.entidad;
+    if (filters.desde) params.desde = filters.desde;
+    if (filters.hasta) params.hasta = filters.hasta;
+    const res = await api.getAuditoria(params);
+    if (res.error) return [];
+    return (res.data as AuditLog[]).sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
   },
 };
 
 // ==================== HOSPITALIZACIÓN REPOSITORY ====================
 export const HospitalizacionRepository = {
   async getAll(): Promise<Hospitalizacion[]> {
-    await delay();
-    return [...hospitalizaciones];
+    const res = await api.getHospitalizaciones();
+    return res.error ? [] : (res.data as Hospitalizacion[]);
   },
 
   async getActivas(): Promise<Hospitalizacion[]> {
-    await delay();
-    return hospitalizaciones.filter((h) => h.estado === 'hospitalizado');
+    const res = await api.getHospitalizaciones({ estado: 'hospitalizado' });
+    return res.error ? [] : (res.data as Hospitalizacion[]);
   },
 
-  getById(id: string): Hospitalizacion | undefined {
-    return hospitalizaciones.find((h) => h.id === id);
+  async getById(id: string): Promise<Hospitalizacion | undefined> {
+    const res = await api.getHospitalizacionById(id);
+    return res.error ? undefined : (res.data as Hospitalizacion);
   },
 
   async getByMascota(mascotaId: string): Promise<Hospitalizacion[]> {
-    await delay();
-    return hospitalizaciones.filter((h) => h.mascotaId === mascotaId);
+    const res = await api.getHospitalizaciones({ mascotaId });
+    return res.error ? [] : (res.data as Hospitalizacion[]);
   },
 
   async create(data: Omit<Hospitalizacion, 'id'>): Promise<Hospitalizacion> {
-    await delay();
-    const nueva: Hospitalizacion = { ...data, id: genId('hos') };
-    hospitalizaciones.push(nueva);
-    logAudit({ usuario: 'Sistema', rol: 'veterinario', accion: 'crear', entidad: 'Hospitalizacion', entidadId: nueva.id, valoresDespues: { mascotaId: nueva.mascotaId, motivo: nueva.motivo } as Record<string, unknown> });
-    return nueva;
+    const res = await api.createHospitalizacion(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Hospitalizacion;
   },
 
   async update(id: string, data: Partial<Hospitalizacion>): Promise<Hospitalizacion | null> {
-    await delay();
-    const idx = hospitalizaciones.findIndex((h) => h.id === id);
-    if (idx < 0) return null;
-    hospitalizaciones[idx] = { ...hospitalizaciones[idx], ...data, id };
-    return hospitalizaciones[idx];
+    const res = await api.updateHospitalizacion(id, data);
+    if (res.error) return null;
+    return res.data as Hospitalizacion;
   },
 
   async darAlta(id: string, resumenAlta: string, indicacionesAlta: string): Promise<Hospitalizacion | null> {
-    await delay();
-    const idx = hospitalizaciones.findIndex((h) => h.id === id);
-    if (idx < 0) return null;
-    hospitalizaciones[idx].estado = 'alta';
-    hospitalizaciones[idx].fechaAlta = ahora();
-    hospitalizaciones[idx].resumenAlta = resumenAlta;
-    hospitalizaciones[idx].indicacionesAlta = indicacionesAlta;
-    logAudit({ usuario: 'Sistema', rol: 'veterinario', accion: 'alta_hospitalizacion', entidad: 'Hospitalizacion', entidadId: id, diff: [{ campo: 'estado', antes: 'hospitalizado', despues: 'alta' }] });
-    return hospitalizaciones[idx];
+    const res = await api.darAltaHospitalizacion(id, { resumenAlta, indicacionesAlta });
+    if (res.error) return null;
+    return res.data as Hospitalizacion;
   },
 };
 
 // ==================== MEDICACIÓN REPOSITORY ====================
 export const MedicacionRepository = {
   async getByHospitalizacion(hospitalizacionId: string): Promise<Medicacion[]> {
-    await delay();
-    return medicaciones.filter((m) => m.hospitalizacionId === hospitalizacionId);
+    const res = await api.getMedicaciones(hospitalizacionId);
+    return res.error ? [] : (res.data as Medicacion[]);
   },
 
-  async create(data: Omit<Medicacion, 'id'>): Promise<Medicacion> {
-    await delay();
-    const nueva: Medicacion = { ...data, id: genId('med') };
-    medicaciones.push(nueva);
-    return nueva;
+  async getByMascota(mascotaId: string): Promise<Medicacion[]> {
+    const hospRes = await api.getHospitalizaciones({ mascotaId });
+    if (hospRes.error) return [];
+    const hosps = hospRes.data as Hospitalizacion[];
+    const results: Medicacion[] = [];
+    for (const hosp of hosps) {
+      const medRes = await api.getMedicaciones(hosp.id);
+      if (!medRes.error && medRes.data) {
+        results.push(...(medRes.data as Medicacion[]));
+      }
+    }
+    return results;
+  },
+
+  async create(hospitalizacionId: string, data: Omit<Medicacion, 'id'>): Promise<Medicacion> {
+    const res = await api.createMedicacion(hospitalizacionId, data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Medicacion;
   },
 
   async delete(id: string): Promise<boolean> {
-    await delay();
-    const idx = medicaciones.findIndex((m) => m.id === id);
-    if (idx < 0) return false;
-    medicaciones.splice(idx, 1);
-    return true;
+    try {
+      await api.deleteMedicacion(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
-  async registrarToma(medicacionId: string, fecha: string, hora: string, usuario: string): Promise<Medicacion | null> {
-    await delay();
-    const idx = medicaciones.findIndex((m) => m.id === medicacionId);
-    if (idx < 0) return null;
-    const tomaIdx = medicaciones[idx].tomas.findIndex(t => t.fecha === fecha && t.hora === hora);
-    if (tomaIdx >= 0) {
-      medicaciones[idx].tomas[tomaIdx].administrada = true;
-      medicaciones[idx].tomas[tomaIdx].horaReal = ahora().split('T')[1] || '';
-      medicaciones[idx].tomas[tomaIdx].usuario = usuario;
-    } else {
-      medicaciones[idx].tomas.push({ fecha, hora, administrada: true, horaReal: ahora().split('T')[1] || '', usuario });
-    }
-    return medicaciones[idx];
+  async registrarToma(medicacionId: string, tomaId: string, horaReal: string): Promise<Medicacion | null> {
+    const res = await api.administrarToma(medicacionId, tomaId, horaReal);
+    if (res.error) return null;
+    return res.data as Medicacion;
   },
 };
 
 // ==================== EVOLUCIÓN DIARIA REPOSITORY ====================
 export const EvolucionRepository = {
   async getByHospitalizacion(hospitalizacionId: string): Promise<EvolucionDiaria[]> {
-    await delay();
-    return evoluciones
-      .filter((e) => e.hospitalizacionId === hospitalizacionId)
-      .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+    const res = await api.getEvoluciones(hospitalizacionId);
+    if (res.error) return [];
+    return (res.data as EvolucionDiaria[]).sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
   },
 
-  async create(data: Omit<EvolucionDiaria, 'id'>): Promise<EvolucionDiaria> {
-    await delay();
-    const nueva: EvolucionDiaria = { ...data, id: genId('evd') };
-    evoluciones.push(nueva);
-    return nueva;
+  async create(hospitalizacionId: string, data: Omit<EvolucionDiaria, 'id'>): Promise<EvolucionDiaria> {
+    const res = await api.createEvolucion(hospitalizacionId, data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as EvolucionDiaria;
   },
 };
 
 // ==================== CAMPAÑA REPOSITORY ====================
 export const CampanaRepository = {
   async getAll(): Promise<CampanaEnvio[]> {
-    await delay();
-    return [...campanaEnvios];
+    const res = await api.getCampanaEnvios();
+    return res.error ? [] : (res.data as CampanaEnvio[]);
   },
 
   async getBySegmento(segmento: string): Promise<CampanaEnvio[]> {
-    await delay();
-    return campanaEnvios.filter((c) => c.segmento === segmento);
+    const res = await api.getCampanaEnvios(segmento);
+    return res.error ? [] : (res.data as CampanaEnvio[]);
   },
 
-  async create(data: Omit<CampanaEnvio, 'id'>): Promise<CampanaEnvio> {
-    await delay();
-    const nuevo: CampanaEnvio = { ...data, id: genId('cme') };
-    campanaEnvios.push(nuevo);
-    return nuevo;
+  async calcularSegmentos(): Promise<Record<string, { clienteId: string; mascotaId: string | null; motivo: string }[]>> {
+    const res = await api.getCampanaSegmentos();
+    if (res.error) return {};
+    return res.data as Record<string, { clienteId: string; mascotaId: string | null; motivo: string }[]>;
   },
 
-  async enviar(segmento: string, envios: Omit<CampanaEnvio, 'id' | 'segmento'>[], enviadoPor: string): Promise<CampanaEnvio[]> {
-    await delay(200);
-    const nuevos: CampanaEnvio[] = [];
-    for (const envio of envios) {
-      const nuevo: CampanaEnvio = { ...envio, id: genId('cme'), segmento, fechaEnviado: ahora(), enviadoPor };
-      campanaEnvios.push(nuevo);
-      nuevos.push(nuevo);
+  async enviar(segmento: string, envios: { clienteId: string; mascotaId: string | null; motivo: string }[]): Promise<{ total: number; error?: string }> {
+    // El backend calcula y envía las campañas automáticamente
+    // Este método es para compatibilidad con el frontend
+    return { total: envios.length };
+  },
+};
+
+// ==================== PUNTUACIÓN DE CITA REPOSITORY ====================
+export const PuntuacionRepository = {
+  async getAll(): Promise<PuntuacionCita[]> {
+    const res = await api.getPuntuaciones();
+    return res.error ? [] : (res.data as PuntuacionCita[]);
+  },
+
+  async getByCita(citaId: string): Promise<PuntuacionCita | undefined> {
+    const res = await api.getPuntuacionByCita(citaId);
+    return res.error ? undefined : (res.data as PuntuacionCita);
+  },
+
+  async getPuntuacionByToken(token: string): Promise<PuntuacionCita | undefined> {
+    const res = await api.getPuntuacionByToken(token);
+    return res.error ? undefined : (res.data as PuntuacionCita);
+  },
+
+  async getByCitaIdOrCreate(citaId: string): Promise<PuntuacionCita | null> {
+    // Intentar obtener existente primero
+    const existing = await this.getByCita(citaId);
+    if (existing) return existing;
+    // Si no existe, crear una nueva
+    const res = await api.createPuntuacion(citaId);
+    if (res.error) return null;
+    return res.data as PuntuacionCita;
+  },
+
+  async responder(
+    token: string,
+    calificacion: number,
+    recomienda: boolean,
+    comentario: string | null
+  ): Promise<PuntuacionCita | null> {
+    const res = await api.responderPuntuacion(token, {
+      calificacion,
+      recomienda,
+      comentario,
+    });
+    if (res.error) return null;
+    return res.data as PuntuacionCita;
+  },
+
+  async getStats(): Promise<{
+    promedio: number;
+    total: number;
+    respondidas: number;
+    pendientes: number;
+    recomienda: number;
+    porEstrella: Record<number, number>;
+    porVeterinario?: Array<{ veterinarioId: string; nombre: string; promedio: number; total: number }>;
+    comentarios?: string[];
+  }> {
+    const res = await api.getPuntuacionesStats();
+    if (res.error) {
+      return { promedio: 0, total: 0, respondidas: 0, pendientes: 0, recomienda: 0, porEstrella: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
     }
-    logAudit({ usuario: enviadoPor, rol: 'admin', accion: 'enviar_campaña', entidad: 'Campana', entidadId: genId('cam'), valoresDespues: { segmento, totalEnvios: envios.length } as Record<string, unknown> });
-    return nuevos;
+    const stats = res.data as {
+      promedio: number;
+      total: number;
+      respondidas: number;
+      pendientes: number;
+      recomienda: number;
+      porEstrella?: Record<number, number>;
+      porVeterinario?: Array<{ veterinarioId: string; nombre: string; promedio: number; total: number }>;
+      comentarios?: string[];
+    };
+    // Ensure porEstrella has default values even if backend doesn't return it
+    return {
+      ...stats,
+      porEstrella: stats.porEstrella || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+    };
   },
 
-  // Segmentación: calcular destinatarios por segmento
-  async calcularSegmento(segmento: string): Promise<{ clienteId: string; mascotaId: string | null; motivo: string }[]> {
-    await delay(100);
-    const resultados: { clienteId: string; mascotaId: string | null; motivo: string }[] = [];
-    const hoy = new Date('2026-10-15');
+  async getPendientes(): Promise<PuntuacionCita[]> {
+    const res = await api.getPuntuacionesPendientes();
+    return res.error ? [] : (res.data as PuntuacionCita[]);
+  },
+};
 
-    // Excluir clientes que revocaron consentimiento de comunicaciones
-    const clientesConsent = clientes.filter(c => c.consentimientoComunicaciones.aceptado);
+// ==================== CATÁLOGO REPOSITORY ====================
+export const CatalogoRepository = {
+  // --- Vacunas ---
+  async getVacunasActivas(): Promise<import('./models').CatalogoVacuna[]> {
+    const res = await api.getCatalogoVacunas();
+    return res.error ? [] : (res.data as import('./models').CatalogoVacuna[]).filter(v => v.activa);
+  },
 
-    if (segmento === 'vacunas_vencidas') {
-      const limite30 = new Date(hoy); limite30.setDate(limite30.getDate() + 30);
-      for (const v of vacunas) {
-        const prox = new Date(v.proximaDosis);
-        const masc = mascotas.find(m => m.id === v.mascotaId);
-        if (!masc) continue;
-        const cli = clientesConsent.find(c => c.id === masc.clienteId);
-        if (!cli) continue;
-        if (prox <= limite30) {
-          resultados.push({ clienteId: cli.id, mascotaId: masc.id, motivo: `Vacuna ${v.nombre} vence/próxima: ${v.proximaDosis}` });
-        }
-      }
-    } else if (segmento === 'desparasitacion_pendiente') {
-      const limite30 = new Date(hoy); limite30.setDate(limite30.getDate() + 30);
-      for (const d of desparasitaciones) {
-        const prox = new Date(d.proximaDosis);
-        const masc = mascotas.find(m => m.id === d.mascotaId);
-        if (!masc) continue;
-        const cli = clientesConsent.find(c => c.id === masc.clienteId);
-        if (!cli) continue;
-        if (prox <= limite30) {
-          resultados.push({ clienteId: cli.id, mascotaId: masc.id, motivo: `Desparasitación próxima: ${d.proximaDosis}` });
-        }
-      }
-    } else if (segmento === 'clientes_inactivos') {
-      const seisMeses = new Date(hoy); seisMeses.setMonth(seisMeses.getMonth() - 6);
-      for (const c of clientesConsent) {
-        const mascotasCliente = mascotas.filter(m => m.clienteId === c.id);
-        const citasCliente = citas.filter(ci =>
-          mascotasCliente.some(m => m.id === ci.mascotaId) && ci.estado === 'atendida'
-        );
-        const ultimaCita = citasCliente.sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime())[0];
-        if (!ultimaCita || new Date(ultimaCita.fechaHora) < seisMeses) {
-          const masc = mascotasCliente[0];
-          resultados.push({ clienteId: c.id, mascotaId: masc?.id ?? null, motivo: 'Sin visitas en más de 6 meses' });
-        }
-      }
-    } else if (segmento === 'cumpleanos_mascotas') {
-      const mesActual = hoy.getMonth() + 1; // 1-12
-      const diaActual = hoy.getDate();
-      for (const m of mascotas) {
-        const cli = clientesConsent.find(c => c.id === m.clienteId);
-        if (!cli) continue;
-        const nac = new Date(m.fechaNacimiento);
-        if (nac.getMonth() + 1 === mesActual) {
-          resultados.push({ clienteId: cli.id, mascotaId: m.id, motivo: `Cumpleaños de ${m.nombre} - ${nac.getDate()}/${mesActual}` });
-        }
-      }
+  async getAllVacunas(): Promise<import('./models').CatalogoVacuna[]> {
+    const res = await api.getCatalogoVacunas();
+    return res.error ? [] : (res.data as import('./models').CatalogoVacuna[]);
+  },
+
+  async getVacunaById(id: string): Promise<import('./models').CatalogoVacuna | undefined> {
+    const all = await this.getAllVacunas();
+    return all.find(v => v.id === id);
+  },
+
+  async createVacuna(data: Omit<import('./models').CatalogoVacuna, 'id'>): Promise<import('./models').CatalogoVacuna> {
+    const res = await api.createCatalogoVacuna(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as import('./models').CatalogoVacuna;
+  },
+
+  async updateVacuna(id: string, data: Partial<import('./models').CatalogoVacuna>): Promise<import('./models').CatalogoVacuna | null> {
+    const res = await api.updateCatalogoVacuna(id, data);
+    if (res.error) return null;
+    return res.data as import('./models').CatalogoVacuna;
+  },
+
+  async deleteVacuna(id: string): Promise<boolean> {
+    try {
+      await api.deleteCatalogoVacuna(id);
+      return true;
+    } catch {
+      return false;
     }
-    return resultados;
+  },
+
+  // --- Desparasitación ---
+  async getDesparasitacionActivas(): Promise<import('./models').CatalogoDesparasitacion[]> {
+    const res = await api.getCatalogoDesparasitacion();
+    if (res.error) return [];
+    const raw = res.data as Record<string, unknown>[];
+    const mapped = raw.map((item: Record<string, unknown>) => ({
+      id: item.id as string,
+      nombre: item.nombre as string,
+      intervaloMeses: (item.intervalo_meses ?? item.intervaloMeses ?? 3) as number,
+      via: (item.via ?? 'Oral') as 'Oral' | 'Subcutánea' | 'Tópica' | 'Inyectable',
+      activa: (item.activa ?? true) as boolean,
+    }));
+    return mapped.filter(d => d.activa);
+  },
+
+  async getAllDesparasitaciones(): Promise<import('./models').CatalogoDesparasitacion[]> {
+    const res = await api.getCatalogoDesparasitacion();
+    if (res.error) return [];
+    const raw = res.data as Record<string, unknown>[];
+    return raw.map((item: Record<string, unknown>) => ({
+      id: item.id as string,
+      nombre: item.nombre as string,
+      intervaloMeses: (item.intervalo_meses ?? item.intervaloMeses ?? 3) as number,
+      via: (item.via ?? 'Oral') as 'Oral' | 'Subcutánea' | 'Tópica' | 'Inyectable',
+      activa: (item.activa ?? true) as boolean,
+    }));
+  },
+
+  async getDesparasitacionById(id: string): Promise<import('./models').CatalogoDesparasitacion | undefined> {
+    const all = await this.getAllDesparasitaciones();
+    return all.find(d => d.id === id);
+  },
+
+  async createDesparasitacion(data: Omit<import('./models').CatalogoDesparasitacion, 'id'>): Promise<import('./models').CatalogoDesparasitacion> {
+    const res = await api.createCatalogoDesparasitacion(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as import('./models').CatalogoDesparasitacion;
+  },
+
+  async updateDesparasitacion(id: string, data: Partial<import('./models').CatalogoDesparasitacion>): Promise<import('./models').CatalogoDesparasitacion | null> {
+    const res = await api.updateCatalogoDesparasitacion(id, data);
+    if (res.error) return null;
+    return res.data as import('./models').CatalogoDesparasitacion;
+  },
+
+  async deleteDesparasitacion(id: string): Promise<boolean> {
+    try {
+      await api.deleteCatalogoDesparasitacion(id);
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 
@@ -911,19 +964,21 @@ export const BusquedaRepository = {
     citas: Cita[];
     casos: CasoClinico[];
   }> {
-    await delay(100);
-    const q = query.toLowerCase();
+    const res = await api.searchGlobal(query);
+    if (res.error) {
+      return { clientes: [], mascotas: [], citas: [], casos: [] };
+    }
+    const data = res.data as {
+      clientes?: Cliente[];
+      mascotas?: Mascota[];
+      citas?: Cita[];
+      casos?: CasoClinico[];
+    };
     return {
-      clientes: clientes.filter(
-        (c) => c.nombre.toLowerCase().includes(q) || c.apellido.toLowerCase().includes(q) || c.cedula.includes(q)
-      ),
-      mascotas: mascotas.filter(
-        (m) => m.nombre.toLowerCase().includes(q) || m.especie.toLowerCase().includes(q) || (m.raza || '').toLowerCase().includes(q)
-      ),
-      citas: citas.filter((c) => c.motivo.toLowerCase().includes(q)),
-      casos: casosClinicos.filter(
-        (c) => c.motivo.toLowerCase().includes(q) || c.diagnostico.toLowerCase().includes(q)
-      ),
+      clientes: data.clientes || [],
+      mascotas: data.mascotas || [],
+      citas: data.citas || [],
+      casos: data.casos || [],
     };
   },
 };

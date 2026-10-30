@@ -6,29 +6,51 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { ClipboardList, Search, Plus } from 'lucide-react';
+import { ClipboardList, Search, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { CasoRepository, MascotaRepository } from '@/lib/repositories';
 import { ESTADOS_CASO, formatDate } from '@/lib/constants';
+import { useAuth } from '@/components/auth-provider';
+import { toast } from 'sonner';
 import type { CasoClinico, Mascota } from '@/lib/models';
 
 export default function CasosPage() {
+  const { user } = useAuth();
+  const canDelete = user && (user.rol === 'admin' || user.rol === 'veterinario');
+
   const [casos, setCasos] = useState<CasoClinico[]>([]);
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('all');
+  const [deleteTarget, setDeleteTarget] = useState<CasoClinico | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     (async () => {
       const [c, m] = await Promise.all([CasoRepository.getAll(), MascotaRepository.getAll()]);
-      setCasos(c.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+      setCasos(c.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')));
       setMascotas(m);
       setLoading(false);
     })();
   }, []);
 
   const getMascota = (id: string) => mascotas.find(m => m.id === id);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const ok = await CasoRepository.delete(deleteTarget.id);
+    setDeleting(false);
+    if (ok) {
+      setCasos(prev => prev.filter(c => c.id !== deleteTarget.id));
+      toast.success('Caso clínico eliminado');
+    } else {
+      toast.error('No se pudo eliminar el caso');
+    }
+    setDeleteTarget(null);
+  };
   const filtered = casos.filter(c => {
     const mas = getMascota(c.mascotaId);
     const q = search.toLowerCase();
@@ -71,30 +93,64 @@ export default function CasosPage() {
         {filtered.map((caso) => {
           const mas = getMascota(caso.mascotaId);
           return (
-            <Link key={caso.id} href={`/admin/casos/${caso.id}`}>
-              <Card className="hover:border-primary/40 transition-all cursor-pointer">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center shrink-0">
-                      <ClipboardList className="h-5 w-5 text-teal-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-sm truncate">{mas?.nombre || 'N/A'}</p>
-                        <Badge className={`text-[10px] ${ESTADOS_CASO[caso.estado].color}`}>{ESTADOS_CASO[caso.estado].label}</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{caso.motivo}</p>
-                      <p className="text-xs text-muted-foreground truncate">{caso.diagnostico}</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">{formatDate(caso.fecha)}</p>
-                    </div>
+            <Card key={caso.id} className="hover:border-primary/40 transition-all">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center shrink-0">
+                    <ClipboardList className="h-5 w-5 text-teal-500" />
                   </div>
-                </CardContent>
-              </Card>
-            </Link>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-sm truncate">{mas?.nombre || 'N/A'}</p>
+                      <Badge className={`text-[10px] ${ESTADOS_CASO[caso.estado].color}`}>{ESTADOS_CASO[caso.estado].label}</Badge>
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-destructive/60 hover:text-destructive shrink-0"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(caso); }}
+                          title="Eliminar caso"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                    <Link href={`/admin/casos/${caso.id}`} className="block">
+                      <p className="text-xs text-muted-foreground truncate mt-0.5 cursor-pointer hover:text-primary">{caso.motivo}</p>
+                      <p className="text-xs text-muted-foreground truncate cursor-pointer hover:text-primary">{caso.diagnostico}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1 cursor-pointer hover:text-primary">{formatDate(caso.fecha)}</p>
+                    </Link>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           );
         })}
         {filtered.length === 0 && <div className="col-span-full text-center py-12 text-muted-foreground">No se encontraron casos</div>}
       </div>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Eliminar Caso Clínico
+            </DialogTitle>
+          </DialogHeader>
+          <DialogDescription>
+            ¿Estás seguro de eliminar el caso clínico de <strong>{getMascota(deleteTarget?.mascotaId || '')?.nombre}</strong>?
+            <br />
+            <span className="text-destructive">Esta acción no se puede deshacer.</span>
+          </DialogDescription>
+          <DialogFooter className="flex sm:justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Eliminando...' : 'Eliminar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

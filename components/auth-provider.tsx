@@ -4,48 +4,50 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 import type { UsuarioAuth } from '@/lib/models';
 import type { Rol } from '@/lib/constants';
 import { AuthRepository } from '@/lib/repositories';
+import { api } from '@/lib/api-client';
 
 interface AuthContextValue {
   user: UsuarioAuth | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   hasRole: (...roles: Rol[]) => boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-const STORAGE_KEY = 'nanivet_auth';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UsuarioAuth | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setUser(JSON.parse(stored));
+    const initializeAuth = () => {
+      try {
+        const storedAuth = api.getStoredAuth();
+        if (storedAuth && storedAuth.user) {
+          setUser(storedAuth.user as UsuarioAuth);
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
-    setLoading(false);
+      setLoading(false);
+    };
+
+    initializeAuth();
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     const u = await AuthRepository.login(email, password);
     if (u) {
       setUser(u);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
       return true;
     }
     return false;
   };
 
-  const logout = () => {
+  const logout = async (): Promise<void> => {
+    await api.logout();
     setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
   };
 
   const hasRole = (...roles: Rol[]): boolean => {

@@ -44,12 +44,11 @@ export function LoginForm() {
 
       <Card className="w-full max-w-md relative bg-card/80 backdrop-blur-xl border-primary/20">
         <CardHeader className="text-center space-y-4">
-          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-400 to-cyan-600 flex items-center justify-center shadow-lg shadow-teal-500/25">
-            <PawPrint className="h-8 w-8 text-white" />
+          <div className="mx-auto w-24 h-auto">
+            <img src="/logo.svg" alt="NANIVET Logo" className="w-full h-auto" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold tracking-tight">NANIVET</CardTitle>
-            <CardDescription className="text-sm">Clínica Veterinaria - Acceso al sistema</CardDescription>
+            <CardDescription className="text-sm">Acceso al sistema</CardDescription>
           </div>
         </CardHeader>
         <CardContent>
@@ -94,21 +93,6 @@ export function LoginForm() {
               {loading ? 'Ingresando...' : 'Ingresar'}
             </Button>
           </form>
-
-          <div className="mt-6 pt-4 border-t border-border/50">
-            <p className="text-xs text-muted-foreground mb-2 text-center">Accesos rápidos (demo):</p>
-            <div className="grid grid-cols-3 gap-2">
-              <Button variant="outline" size="sm" onClick={() => quickLogin('veterinario@nanivet.com')} className="text-xs">
-                Veterinario
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => quickLogin('recepcion@nanivet.com')} className="text-xs">
-                Recepción
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => quickLogin('admin@nanivet.com')} className="text-xs">
-                Admin
-              </Button>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>

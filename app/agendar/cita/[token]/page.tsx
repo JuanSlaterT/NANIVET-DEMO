@@ -195,13 +195,7 @@ export default function PublicCitaPage() {
       <div className="w-full max-w-lg space-y-4">
         {/* Header */}
         <div className="flex items-center gap-3 justify-center">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 flex items-center justify-center shadow-lg shadow-primary/20">
-            <PawPrint className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="font-bold text-lg leading-tight">NANIVET</h1>
-            <p className="text-[10px] text-muted-foreground leading-tight">Clínica Veterinaria</p>
-          </div>
+          <img src="/logo.svg" alt="NANIVET Logo" className="h-10 w-auto" />
         </div>
 
         <Card>
