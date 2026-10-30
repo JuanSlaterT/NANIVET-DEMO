@@ -17,7 +17,7 @@ import { CasoRepository, MascotaRepository, VeterinarioRepository, VacunaReposit
 import { ESTADOS_CASO, formatDate } from '@/lib/constants';
 import type { CasoClinico, Mascota, Veterinario, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, AuditLog } from '@/lib/models';
 import { useAuth } from '@/components/auth-provider';
-import { notesToSOAP, suggestDifferentials } from '@/lib/ai-service';
+import { convertirNotasASoap, obtenerDiferenciales } from '@/lib/ia-service';
 
 export default function CasoDetailPage() {
   const params = useParams();
@@ -36,7 +36,7 @@ export default function CasoDetailPage() {
   const [nuevoEstado, setNuevoEstado] = useState<string>('');
   const [aiNotas, setAiNotas] = useState('');
   const [aiSoapLoading, setAiSoapLoading] = useState(false);
-  const [aiDifferentials, setAiDifferentials] = useState<{ diagnostico: string; probabilidad: string; razonamiento: string }[]>([]);
+  const [aiDifferentials, setAiDifferentials] = useState<{ diagnostico: string; probabilidad: string; descripcion: string; examenes: string[] }[]>([]);
   const [aiDiffLoading, setAiDiffLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
@@ -139,21 +139,34 @@ export default function CasoDetailPage() {
   };
 
   const handleAiSOAP = async () => {
-    if (!aiNotas.trim()) return;
+    if (!aiNotas.trim() || !mascota) return;
     setAiSoapLoading(true);
-    const result = await notesToSOAP(aiNotas);
-    setSoap(result);
+    setSoap({ subjetivo: '', objetivo: '', analisis: '', plan: '' });
+    const response = await convertirNotasASoap(mascota.id, aiNotas);
     setAiSoapLoading(false);
-    setEditing(true);
+    if (response.error) {
+      setSoap({ subjetivo: `Error: ${response.error.message}`, objetivo: '', analisis: '', plan: '' });
+    } else if (response.data) {
+      setSoap(response.data.soap);
+      setEditing(true);
+    }
   };
 
   const handleAiDifferentials = async () => {
     if (!mascota) return;
     setAiDiffLoading(true);
     const sintomas = `${soap.subjetivo} ${soap.objetivo} ${caso?.motivo || ''}`;
-    const result = await suggestDifferentials(sintomas, mascota.especie);
-    setAiDifferentials(result);
+    const response = await obtenerDiferenciales({
+      mascotaId: mascota.id,
+      especie: mascota.especie,
+      signos: sintomas.split(/\s+/).filter(Boolean),
+    });
     setAiDiffLoading(false);
+    if (response.error) {
+      setAiDifferentials([]);
+    } else if (response.data) {
+      setAiDifferentials(response.data.diferenciales);
+    }
   };
 
   if (loading || !caso) {
@@ -408,7 +421,17 @@ export default function CasoDetailPage() {
                         <span className="text-sm font-medium">{d.diagnostico}</span>
                         <Badge variant={d.probabilidad === 'Alta' ? 'destructive' : d.probabilidad === 'Media' ? 'secondary' : 'outline'} className="text-[10px]">{d.probabilidad}</Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">{d.razonamiento}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{d.descripcion}</p>
+                      {d.examenes.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-[10px] font-medium text-muted-foreground mb-1">Exámenes sugeridos:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {d.examenes.map((examen, j) => (
+                              <Badge key={j} variant="outline" className="text-[10px]">{examen}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

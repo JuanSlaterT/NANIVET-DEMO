@@ -97,6 +97,80 @@ export interface Cita {
   pesoCita?: number | null;
 }
 
+// ==================== IA SERVICE TYPES ====================
+
+export interface ResumenHistoriaResponse {
+  data: {
+    mascota: {
+      id: string;
+      nombre: string;
+      especie: string;
+    };
+    resumen: string;
+    disclaimer: string;
+  };
+}
+
+export interface NotasSoapResponse {
+  data: {
+    mascotaId: string;
+    soap: {
+      subjetivo: string;
+      objetivo: string;
+      analisis: string;
+      plan: string;
+    };
+    disclaimer: string;
+  };
+}
+
+export interface RedactarMensajeRequest {
+  tipo: 'recordatorio' | 'resultados' | 'seguimiento' | string;
+  mascotaNombre: string;
+  duenoNombre: string;
+  detalles?: string | Record<string, unknown>;
+}
+
+export interface RedactarMensajeResponse {
+  data: {
+    mensaje: string;
+    disclaimer: string;
+  };
+}
+
+export interface DiagnosticoDiferencial {
+  diagnostico: string;
+  probabilidad: 'Alta' | 'Media' | 'Baja' | string;
+  descripcion: string;
+  examenes: string[];
+}
+
+export interface DiferencialesResponse {
+  data: {
+    diferenciales: DiagnosticoDiferencial[];
+    disclaimer: string;
+  };
+}
+
+export interface SignosVitales {
+  temperaturaC?: number;
+  frecuenciaCardiaca?: number;
+  frecuenciaRespiratoria?: number;
+}
+
+export interface DatosClinicosDiferenciales {
+  mascotaId?: string;
+  especie?: string;
+  raza?: string;
+  edad?: number;
+  sexo?: string;
+  pesoKg?: number;
+  signos?: string[];
+  signosVitales?: SignosVitales;
+  antecedentes?: string;
+  hallazgos?: string;
+}
+
 export interface PuntuacionCita {
   id: string;
   citaId: string;

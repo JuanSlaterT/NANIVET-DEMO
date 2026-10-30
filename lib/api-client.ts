@@ -400,7 +400,7 @@ async function executeFetchApi<T>(
  * are cached briefly. Every caller receives its own clone so local sorting or
  * mutation cannot affect the cache or another consumer.
  */
-function fetchApi<T>(
+export function fetchApi<T>(
   url: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {

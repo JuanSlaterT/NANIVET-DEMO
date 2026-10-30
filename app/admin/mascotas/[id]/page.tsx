@@ -18,7 +18,7 @@ import { MascotaRepository, ClienteRepository, CitaRepository, CasoRepository, V
 import { formatDate, formatDateTime, buildWhatsAppUrl, ESTADOS_CITA, ESTADOS_CASO, TIPOS_SERVICIO, ESTADOS_HOSPITALIZACION } from '@/lib/constants';
 import type { Mascota, Cliente, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, PesoRegistrado, AuditLog, Hospitalizacion, Medicacion, Veterinario } from '@/lib/models';
 import { useAuth } from '@/components/auth-provider';
-import { summarizeHistory } from '@/lib/ai-service';
+import { resumirHistoria } from '@/lib/ia-service';
 import { ROLES_CLINICOS } from '@/lib/constants';
 
 const WeightChart = dynamic(
@@ -239,9 +239,14 @@ export default function MascotaDetailPage() {
   const handleAISummary = async () => {
     if (!mascota) return;
     setAiLoading(true);
-    const summary = await summarizeHistory(mascota, casos, vacunas, tratamientos, desparasitaciones, cirugias, examenes);
-    setAiSummary(summary);
+    setAiSummary(null);
+    const response = await resumirHistoria(mascota.id);
     setAiLoading(false);
+    if (response.error) {
+      setAiSummary(`Error al generar el resumen: ${response.error.message}`);
+    } else if (response.data) {
+      setAiSummary(response.data.resumen);
+    }
   };
 
   if (loading || !mascota) {
