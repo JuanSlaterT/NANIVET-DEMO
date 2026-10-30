@@ -14,30 +14,18 @@ import type {
 import type { Rol, EstadoCita, TipoServicio } from './constants';
 import { LIMITE_HORAS_CANCELAR } from './constants';
 
-// ==================== HELPER ====================
-
-/** Extract data from API response or throw on error */
-async function unwrap<T>(response: Awaited<ReturnType<typeof api.fetchApi<T>>>): Promise<T> {
-  if (response.error) {
-    const err = new Error(response.error.message);
-    (err as any).code = response.error.code;
-    throw err;
-  }
-  return response.data as T;
-}
-
 // ==================== AUTH REPOSITORY ====================
 export const AuthRepository = {
   async login(email: string, password: string): Promise<UsuarioAuth | null> {
     const res = await api.login({ email, password });
     if (res.error) return null;
-    return res.data?.user ?? null;
+    return (res.data?.user as UsuarioAuth | undefined) ?? null;
   },
 
   async getCurrentUser(): Promise<UsuarioAuth | null> {
     const res = await api.getUser();
     if (res.error) return null;
-    return res.data ?? null;
+    return (res.data as UsuarioAuth | undefined) ?? null;
   },
 };
 
@@ -61,7 +49,7 @@ export const StaffRepository = {
     }
   },
 
-  async create(data: Omit<Staff, 'id'>): Promise<Staff> {
+  async create(data: Omit<Staff, 'id' | 'activo' | 'fechaAlta'>): Promise<Staff> {
     const res = await api.createStaff(data);
     if (res.error) throw new Error(res.error.message);
     return res.data as Staff;
@@ -182,8 +170,8 @@ export const ClienteRepository = {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteClient(id);
-      return true;
+      const res = await api.deleteClient(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -232,8 +220,8 @@ export const MascotaRepository = {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteMascota(id);
-      return true;
+      const res = await api.deleteMascota(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -291,8 +279,8 @@ export const CitaRepository = {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteCita(id);
-      return true;
+      const res = await api.deleteCita(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -302,7 +290,7 @@ export const CitaRepository = {
     const res = await api.getSlotsOcupados(veterinarioId, fecha);
     if (res.error) return [];
     // El backend devuelve { data: { ocupados: string[], bloqueado: boolean } }
-    const responseData = res.data as { ocupados: string[]; bloqueado: boolean } | null;
+    const responseData = res.data ?? null;
     return responseData?.ocupados || [];
   },
 
@@ -365,14 +353,18 @@ export const CasoRepository = {
     const res = await api.getCasos(params);
     if (res.error) return [];
     const data = res.data as any[];
-    return Array.isArray(data) ? data.map(transformCasoRow).filter(Boolean) : [];
+    return Array.isArray(data)
+      ? data.map(transformCasoRow).filter((caso): caso is CasoClinico => caso !== undefined)
+      : [];
   },
 
   async getByMascota(mascotaId: string): Promise<CasoClinico[]> {
     const res = await api.getCasos({ mascotaId });
     if (res.error) return [];
     const data = res.data as any[];
-    return Array.isArray(data) ? data.map(transformCasoRow).filter(Boolean) : [];
+    return Array.isArray(data)
+      ? data.map(transformCasoRow).filter((caso): caso is CasoClinico => caso !== undefined)
+      : [];
   },
 
   async getById(id: string): Promise<CasoClinico | undefined> {
@@ -395,8 +387,8 @@ export const CasoRepository = {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteCaso(id);
-      return true;
+      const res = await api.deleteCaso(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -434,8 +426,8 @@ export const VacunaRepository = {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteVacuna(id);
-      return true;
+      const res = await api.deleteVacuna(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -478,8 +470,8 @@ export const TratamientoRepository = {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteTratamiento(id);
-      return true;
+      const res = await api.deleteTratamiento(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -544,8 +536,8 @@ export const DesparasitacionRepository = {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteDesparasitacion(id);
-      return true;
+      const res = await api.deleteDesparasitacion(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -577,8 +569,8 @@ export const CirugiaRepository = {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteCirugia(id);
-      return true;
+      const res = await api.deleteCirugia(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -610,8 +602,8 @@ export const ExamenRepository = {
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteExamen(id);
-      return true;
+      const res = await api.deleteExamen(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -711,26 +703,25 @@ export const MedicacionRepository = {
     const hospRes = await api.getHospitalizaciones({ mascotaId });
     if (hospRes.error) return [];
     const hosps = hospRes.data as Hospitalizacion[];
-    const results: Medicacion[] = [];
-    for (const hosp of hosps) {
-      const medRes = await api.getMedicaciones(hosp.id);
-      if (!medRes.error && medRes.data) {
-        results.push(...(medRes.data as Medicacion[]));
-      }
-    }
-    return results;
+    const results = await Promise.all(
+      hosps.map(async (hosp) => {
+        const medRes = await api.getMedicaciones(hosp.id);
+        return !medRes.error && medRes.data ? medRes.data as Medicacion[] : [];
+      })
+    );
+    return results.flat();
   },
 
-  async create(hospitalizacionId: string, data: Omit<Medicacion, 'id'>): Promise<Medicacion> {
-    const res = await api.createMedicacion(hospitalizacionId, data);
+  async create(data: Omit<Medicacion, 'id'>): Promise<Medicacion> {
+    const res = await api.createMedicacion(data.hospitalizacionId, data);
     if (res.error) throw new Error(res.error.message);
     return res.data as Medicacion;
   },
 
   async delete(id: string): Promise<boolean> {
     try {
-      await api.deleteMedicacion(id);
-      return true;
+      const res = await api.deleteMedicacion(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -751,8 +742,8 @@ export const EvolucionRepository = {
     return (res.data as EvolucionDiaria[]).sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
   },
 
-  async create(hospitalizacionId: string, data: Omit<EvolucionDiaria, 'id'>): Promise<EvolucionDiaria> {
-    const res = await api.createEvolucion(hospitalizacionId, data);
+  async create(data: Omit<EvolucionDiaria, 'id'>): Promise<EvolucionDiaria> {
+    const res = await api.createEvolucion(data.hospitalizacionId, data);
     if (res.error) throw new Error(res.error.message);
     return res.data as EvolucionDiaria;
   },

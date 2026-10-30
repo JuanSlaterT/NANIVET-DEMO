@@ -6,6 +6,7 @@ type Listener = (message: string) => void;
 const listeners = new Set<Listener>();
 let currentMessage = 'Cargando...';
 let isLoading = false;
+let activeRequests = 0;
 
 export const LoadingManager = {
   subscribe(listener: Listener): () => void {
@@ -34,16 +35,30 @@ export function registerLoadingCallbacks(
 ) {
   _startLoading = start;
   _stopLoading = stop;
+
+  // A child effect may start a request before the provider effect registers
+  // these callbacks. Synchronize the UI with the current manager state.
+  if (isLoading) {
+    _startLoading(currentMessage);
+  }
 }
 
 export function startLoading(message: string = 'Cargando...') {
+  activeRequests += 1;
   currentMessage = message;
-  isLoading = true;
-  LoadingManager.emit(message);
-  _startLoading?.(message);
+
+  if (!isLoading) {
+    isLoading = true;
+    LoadingManager.emit(message);
+    _startLoading?.(message);
+  }
 }
 
 export function stopLoading() {
-  isLoading = false;
-  _stopLoading?.();
+  activeRequests = Math.max(0, activeRequests - 1);
+
+  if (isLoading && activeRequests === 0) {
+    isLoading = false;
+    _stopLoading?.();
+  }
 }

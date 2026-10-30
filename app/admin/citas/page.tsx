@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,6 +37,8 @@ const generateTimeSlots = (horario: { inicio: string; fin: string; intervalo: nu
   return slots;
 };
 
+const sortCitas = (items: Cita[]) => [...items].sort((a, b) => b.fechaHora.localeCompare(a.fechaHora));
+
 export default function CitasPage() {
   const [citas, setCitas] = useState<Cita[]>([]);
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
@@ -58,6 +60,8 @@ export default function CitasPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPeso, setShowPeso] = useState(false);
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = async () => {
     const [c, mas, v, cli, hosps] = await Promise.all([
@@ -65,7 +69,7 @@ export default function CitasPage() {
       VeterinarioRepository.getAll(), ClienteRepository.getAll(),
       HospitalizacionRepository.getAll(),
     ]);
-    setCitas(c.sort((a, b) => b.fechaHora.localeCompare(a.fechaHora)));
+    setCitas(sortCitas(c));
     setMascotas(mas);
     setVets(v);
     setClientes(cli);
@@ -75,22 +79,32 @@ export default function CitasPage() {
 
   useEffect(() => { loadData(); }, []);
 
-  const getMascota = (id: string) => mascotas.find(m => m.id === id);
+  const mascotasById = useMemo(() => new Map(mascotas.map(m => [m.id, m])), [mascotas]);
+  const clientesById = useMemo(() => new Map(clientes.map(c => [c.id, c])), [clientes]);
+  const vetsById = useMemo(() => new Map(vets.map(v => [v.id, v])), [vets]);
+  const hospitalizacionesByCita = useMemo(
+    () => new Map(hospitalizaciones.filter(h => h.estado === 'hospitalizado' && h.citaId).map(h => [h.citaId as string, h])),
+    [hospitalizaciones]
+  );
+
+  const getMascota = (id: string) => mascotasById.get(id);
   const getCliente = (mascotaId: string) => {
     const mas = getMascota(mascotaId);
-    return mas ? clientes.find(c => c.id === mas.clienteId) : undefined;
+    return mas ? clientesById.get(mas.clienteId) : undefined;
   };
-  const getVet = (id: string) => vets.find(v => v.id === id);
-  const getCitaHospitalizada = (citaId: string) => hospitalizaciones.find(h => h.citaId === citaId && h.estado === 'hospitalizado');
+  const getVet = (id: string) => vetsById.get(id);
+  const getCitaHospitalizada = (citaId: string) => hospitalizacionesByCita.get(citaId);
 
-  const filtered = citas.filter(c => {
-    const mas = getMascota(c.mascotaId);
-    const cli = getCliente(c.mascotaId);
+  const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    const matchSearch = (mas?.nombre || '').toLowerCase().includes(q) || (cli?.nombre || '').toLowerCase().includes(q) || c.motivo.toLowerCase().includes(q);
-    const matchEstado = filtroEstado === 'all' || c.estado === filtroEstado;
-    return matchSearch && matchEstado;
-  });
+    return citas.filter(c => {
+      const mas = mascotasById.get(c.mascotaId);
+      const cli = mas ? clientesById.get(mas.clienteId) : undefined;
+      const matchSearch = (mas?.nombre || '').toLowerCase().includes(q) || (cli?.nombre || '').toLowerCase().includes(q) || c.motivo.toLowerCase().includes(q);
+      const matchEstado = filtroEstado === 'all' || c.estado === filtroEstado;
+      return matchSearch && matchEstado;
+    });
+  }, [citas, search, filtroEstado, mascotasById, clientesById]);
 
   const openNew = () => {
     setEditing(null);
@@ -153,7 +167,8 @@ export default function CitasPage() {
   };
 
   const handleSave = async () => {
-    if (!validate()) return;
+    if (saving || !validate()) return;
+    setSaving(true);
     const fechaHora = `${form.fecha}T${form.hora}:00`;
     const pesoCita = form.peso ? parseFloat(form.peso) : null;
     const data = {
@@ -162,20 +177,40 @@ export default function CitasPage() {
       fechaHora, estado: form.estado as keyof typeof ESTADOS_CITA,
       motivo: (form.motivo ?? '').trim(), notas: (form.notas ?? '').trim(), pesoCita: pesoCita && pesoCita > 0 ? pesoCita : null,
     };
-    if (editing) {
-      await CitaRepository.update(editing.id, data);
-    } else {
-      await CitaRepository.create(data);
+    try {
+      const saved = editing
+        ? await CitaRepository.update(editing.id, data)
+        : await CitaRepository.create(data);
+      if (!saved) return;
+
+      setCitas(prev => sortCitas(editing
+        ? prev.map(c => c.id === saved.id ? saved : c)
+        : [...prev, saved]));
+      setDialogOpen(false);
+
+      if (saved.tipoServicio === 'cirugia' || editing?.tipoServicio === 'cirugia') {
+        void HospitalizacionRepository.getAll().then(setHospitalizaciones);
+      }
+    } finally {
+      setSaving(false);
     }
-    setDialogOpen(false);
-    await loadData();
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
-    await CitaRepository.delete(deleteTarget.id);
-    setDeleteTarget(null);
-    await loadData();
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const target = deleteTarget;
+      const ok = await CitaRepository.delete(target.id);
+      if (!ok) return;
+      setCitas(prev => prev.filter(c => c.id !== target.id));
+      setDeleteTarget(null);
+      if (target.tipoServicio === 'cirugia') {
+        void HospitalizacionRepository.getAll().then(setHospitalizaciones);
+      }
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const buildMsg = (cita: Cita) => {
@@ -363,7 +398,7 @@ export default function CitasPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>{editing ? 'Guardar' : 'Crear'}</Button>
+            <Button onClick={handleSave} disabled={saving}>{saving ? 'Guardando...' : editing ? 'Guardar' : 'Crear'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -375,7 +410,7 @@ export default function CitasPage() {
           <p className="text-sm text-muted-foreground">¿Eliminar la cita de {getMascota(deleteTarget?.mascotaId || '')?.nombre}?</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete}>Eliminar</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>{deleting ? 'Eliminando...' : 'Eliminar'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

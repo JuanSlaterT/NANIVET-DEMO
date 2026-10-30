@@ -369,7 +369,7 @@ export default function VacunasPage() {
                         <SelectValue placeholder="Selecciona una mascota" />
                       </SelectTrigger>
                       <SelectContent>
-                        {mascotas.sort((a, b) => a.nombre.localeCompare(b.nombre)).map(m => (
+                        {[...mascotas].sort((a, b) => a.nombre.localeCompare(b.nombre)).map(m => (
                           <SelectItem key={m.id} value={m.id}>{m.nombre} ({m.especie})</SelectItem>
                         ))}
                       </SelectContent>

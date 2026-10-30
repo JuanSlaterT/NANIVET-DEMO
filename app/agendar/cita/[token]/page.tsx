@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,23 +34,48 @@ export default function PublicCitaPage() {
   const [action, setAction] = useState<'confirm' | 'cancel' | 'reschedule' | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    setView('loading');
+    setErrorMsg('');
+
     (async () => {
-      const c = CitaRepository.getByToken(token);
-      if (!c) { setView('notfound'); return; }
-      setCita(c);
-      const mas = MascotaRepository.getById(c.mascotaId);
-      setMascota(mas || null);
-      if (mas) {
-        const cli = ClienteRepository.getById(mas.clienteId);
+      try {
+        const c = await CitaRepository.getByToken(token);
+        if (cancelled) return;
+        if (!c) {
+          setView('notfound');
+          return;
+        }
+
+        const mascotaPromise = MascotaRepository.getById(c.mascotaId);
+        const vetPromise = VeterinarioRepository.getById(c.veterinarioId);
+        const mas = await mascotaPromise;
+        const clientePromise = mas
+          ? ClienteRepository.getById(mas.clienteId)
+          : Promise.resolve(undefined);
+        const [cli, v] = await Promise.all([clientePromise, vetPromise]);
+
+        if (cancelled) return;
+
+        const dt = new Date(c.fechaHora);
+        setCita(c);
+        setMascota(mas || null);
         setCliente(cli || null);
+        setVet(v || null);
+        setNuevaFecha(dt.toISOString().split('T')[0]);
+        setNuevaHora(`${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`);
+        setView('found');
+      } catch {
+        if (!cancelled) {
+          setErrorMsg('Error al cargar la cita');
+          setView('error');
+        }
       }
-      const v = VeterinarioRepository.getById(c.veterinarioId);
-      setVet(v || null);
-      const dt = new Date(c.fechaHora);
-      setNuevaFecha(dt.toISOString().split('T')[0]);
-      setNuevaHora(`${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`);
-      setView('found');
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const handleConfirm = async () => {
@@ -195,7 +221,7 @@ export default function PublicCitaPage() {
       <div className="w-full max-w-lg space-y-4">
         {/* Header */}
         <div className="flex items-center gap-3 justify-center">
-          <img src="/logo.svg" alt="NANIVET Logo" className="h-10 w-auto" />
+          <Image src="/logo.svg" alt="NANIVET Logo" width={60} height={40} className="h-10 w-auto" priority />
         </div>
 
         <Card>

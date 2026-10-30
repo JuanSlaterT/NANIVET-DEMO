@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +32,8 @@ export default function HospitalizacionPage() {
   const [nuevaMed, setNuevaMed] = useState({ medicamento: '', dosis: '', via: '', frecuencia: '', horasProgramadas: '' });
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       const [hosps, mas, vs, clis, cit] = await Promise.all([
         HospitalizacionRepository.getAll(),
@@ -40,15 +42,17 @@ export default function HospitalizacionPage() {
         ClienteRepository.getAll(),
         CitaRepository.getAll(),
       ]);
-      // Fetch all medicaciones and evoluciones for each hospitalization
-      const allMedicaciones: Medicacion[] = [];
-      const allEvoluciones: EvolucionDiaria[] = [];
-      for (const h of hosps) {
-        const meds = await MedicacionRepository.getByHospitalizacion(h.id);
-        const evols = await EvolucionRepository.getByHospitalizacion(h.id);
-        allMedicaciones.push(...meds);
-        allEvoluciones.push(...evols);
-      }
+      // Cada hospitalización es independiente: cargar todos sus detalles en paralelo.
+      const details = await Promise.all(
+        hosps.map(async (h) => Promise.all([
+          MedicacionRepository.getByHospitalizacion(h.id),
+          EvolucionRepository.getByHospitalizacion(h.id),
+        ]))
+      );
+      if (cancelled) return;
+
+      const allMedicaciones = details.flatMap(([meds]) => meds);
+      const allEvoluciones = details.flatMap(([, evols]) => evols);
       setHospitalizaciones(hosps);
       setMascotas(mas);
       setVets(vs);
@@ -61,22 +65,32 @@ export default function HospitalizacionPage() {
       const activa = hosps.find(h => h.estado === 'hospitalizado');
       if (activa) setSelectedId(activa.id);
     })();
+
+    return () => { cancelled = true; };
   }, []);
 
-  const getMascota = (id: string) => mascotas.find(m => m.id === id);
+  const mascotasById = useMemo(() => new Map(mascotas.map(m => [m.id, m])), [mascotas]);
+  const clientesById = useMemo(() => new Map(clientes.map(c => [c.id, c])), [clientes]);
+  const vetsById = useMemo(() => new Map(vets.map(v => [v.id, v])), [vets]);
+  const citasById = useMemo(() => new Map(citas.map(c => [c.id, c])), [citas]);
+
+  const getMascota = (id: string) => mascotasById.get(id);
   const getCliente = (mascotaId: string) => {
     const mas = getMascota(mascotaId);
-    return mas ? clientes.find(c => c.id === mas.clienteId) : undefined;
+    return mas ? clientesById.get(mas.clienteId) : undefined;
   };
-  const getVet = (id: string) => vets.find(v => v.id === id);
-  const getCita = (id: string) => citas.find(c => c.id === id);
+  const getVet = (id: string) => vetsById.get(id);
+  const getCita = (id: string) => citasById.get(id);
 
-  const selected = hospitalizaciones.find(h => h.id === selectedId);
-  const selectedMeds = medicaciones.filter(m => m.hospitalizacionId === selectedId);
-  const selectedEvols = evoluciones.filter(e => e.hospitalizacionId === selectedId).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const selected = useMemo(() => hospitalizaciones.find(h => h.id === selectedId), [hospitalizaciones, selectedId]);
+  const selectedMeds = useMemo(() => medicaciones.filter(m => m.hospitalizacionId === selectedId), [medicaciones, selectedId]);
+  const selectedEvols = useMemo(
+    () => evoluciones.filter(e => e.hospitalizacionId === selectedId).sort((a, b) => a.fecha.localeCompare(b.fecha)),
+    [evoluciones, selectedId]
+  );
 
   const handleRegistrarToma = async (medId: string, fecha: string, hora: string) => {
-    const updated = await MedicacionRepository.registrarToma(medId, fecha, hora, 'Dra. Nicole Pérez');
+    const updated = await MedicacionRepository.registrarToma(medId, fecha, hora);
     if (updated) {
       setMedicaciones(prev => prev.map(m => m.id === medId ? updated : m));
     }

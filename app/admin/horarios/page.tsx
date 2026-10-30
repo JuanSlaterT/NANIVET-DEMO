@@ -22,34 +22,42 @@ export default function HorariosPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedVet, setSelectedVet] = useState<string>('');
   const [blockForm, setBlockForm] = useState({ fecha: '2026-10-16', motivo: '' });
+  const [saving, setSaving] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const loadData = async () => {
     const v = await VeterinarioRepository.getAll();
     setVets(v);
 
-    // Fetch bloqueos for each veterinarian
-    const allBloqueos: HorarioBloqueado[] = [];
-    for (const vet of v) {
-      const bloqueos = await VeterinarioRepository.getBloqueos(vet.id);
-      allBloqueos.push(...bloqueos);
-    }
-    setBloqueos(allBloqueos);
+    const allBloqueos = await Promise.all(v.map(vet => VeterinarioRepository.getBloqueos(vet.id)));
+    setBloqueos(allBloqueos.flat());
     setLoading(false);
   };
 
   useEffect(() => { loadData(); }, []);
 
   const addBloqueo = async () => {
-    if (!selectedVet || !blockForm.fecha || !blockForm.motivo.trim()) return;
-    await VeterinarioRepository.addBloqueo(selectedVet, blockForm.fecha, blockForm.motivo.trim());
-    setDialogOpen(false);
-    setBlockForm({ fecha: '2026-10-16', motivo: '' });
-    await loadData();
+    if (saving || !selectedVet || !blockForm.fecha || !blockForm.motivo.trim()) return;
+    setSaving(true);
+    try {
+      const nuevo = await VeterinarioRepository.addBloqueo(selectedVet, blockForm.fecha, blockForm.motivo.trim());
+      setBloqueos(prev => [...prev, nuevo]);
+      setDialogOpen(false);
+      setBlockForm({ fecha: '2026-10-16', motivo: '' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const removeBloqueo = async (id: string) => {
-    await VeterinarioRepository.removeBloqueo(id);
-    await loadData();
+    if (removingId) return;
+    setRemovingId(id);
+    try {
+      await VeterinarioRepository.removeBloqueo(id);
+      setBloqueos(prev => prev.filter(b => b.id !== id));
+    } finally {
+      setRemovingId(null);
+    }
   };
 
   const getVet = (id: string) => vets.find(v => v.id === id);
@@ -78,14 +86,14 @@ export default function HorariosPage() {
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <Clock className="h-4 w-4 text-primary" />
-                <span>{vet.horario_inicio?.substring(0, 5) || '08:00'} - {vet.horario_fin?.substring(0, 5) || '17:00'}</span>
+                <span>{vet.horario.inicio?.substring(0, 5) || '08:00'} - {vet.horario.fin?.substring(0, 5) || '17:00'}</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {(vet.dias_semana || []).map((d: number) => (
+                {(vet.horario.dias || []).map((d: number) => (
                   <span key={d} className="text-[10px] px-2 py-1 rounded-md bg-accent/40 font-medium">{DIAS_NOMBRES[d].slice(0, 3)}</span>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">Intervalo por cita: {vet.intervalo_minutos || 30} min</p>
+              <p className="text-xs text-muted-foreground">Intervalo por cita: {vet.horario.intervalo || 30} min</p>
             </CardContent>
           </Card>
         ))}
@@ -113,7 +121,7 @@ export default function HorariosPage() {
                       <p className="text-sm font-medium">{vet?.nombre || 'N/A'}</p>
                       <p className="text-xs text-muted-foreground">{formatDate(b.fecha)} - {b.motivo}</p>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeBloqueo(b.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" disabled={removingId === b.id} onClick={() => removeBloqueo(b.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
                 );
               })}
@@ -147,7 +155,7 @@ export default function HorariosPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={addBloqueo}>Bloquear</Button>
+            <Button onClick={addBloqueo} disabled={saving}>{saving ? 'Bloqueando...' : 'Bloquear'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

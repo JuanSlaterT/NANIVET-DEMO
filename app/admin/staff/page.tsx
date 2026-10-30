@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,11 +10,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Badge } from '@/components/ui/badge';
 import {
   Users, Search, Plus, Mail, Phone, Key, Eye, Edit, Trash2, Shield,
-  UserCheck, UserX, UserCog, AlertCircle, Loader2, CheckCircle2, XCircle,
+  UserCheck, UserCog, AlertCircle, Loader2, CheckCircle2, XCircle,
 } from 'lucide-react';
 import { StaffRepository } from '@/lib/repositories';
 import { ROLES, formatDate } from '@/lib/constants';
-import type { Rol, Staff } from '@/lib/models';
+import type { Rol } from '@/lib/constants';
+import type { Staff } from '@/lib/models';
 
 export default function StaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -34,6 +35,8 @@ export default function StaffPage() {
   const [deleteTarget, setDeleteTarget] = useState<Staff | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = async () => {
     const data = await StaffRepository.getAll();
@@ -43,15 +46,15 @@ export default function StaffPage() {
 
   useEffect(() => { loadData(); }, []);
 
-  const filtered = staff.filter(s => {
+  const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return (
+    return staff.filter(s => (
       s.nombre.toLowerCase().includes(q) ||
       s.email.toLowerCase().includes(q) ||
       s.rol.toLowerCase().includes(q) ||
       (s.especialidad && s.especialidad.toLowerCase().includes(q))
-    );
-  });
+    ));
+  }, [staff, search]);
 
   const openNew = () => {
     setEditing(null);
@@ -113,9 +116,11 @@ export default function StaffPage() {
   };
 
   const handleSubmit = async () => {
-    if (!validate()) return;
+    if (saving || !validate()) return;
+    setSaving(true);
 
     try {
+      let saved: Staff | null;
       if (editing) {
         const updateData: Partial<Staff> = {
           nombre: form.nombre,
@@ -125,9 +130,9 @@ export default function StaffPage() {
         };
         if (form.password) updateData.password = form.password;
 
-        await StaffRepository.update(editing.id, updateData);
+        saved = await StaffRepository.update(editing.id, updateData);
       } else {
-        await StaffRepository.create({
+        saved = await StaffRepository.create({
           nombre: form.nombre,
           email: form.email,
           password: form.password,
@@ -137,27 +142,36 @@ export default function StaffPage() {
         });
       }
 
-      await loadData();
+      if (!saved) throw new Error('No se pudo guardar el usuario');
+      setStaff(prev => editing
+        ? prev.map(member => member.id === saved!.id ? saved! : member)
+        : [...prev, saved!]);
       setDialogOpen(false);
     } catch (error) {
       setErrors({ submit: 'Error al guardar el usuario' });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      await StaffRepository.delete(deleteTarget.id);
-      await loadData();
+      const targetId = deleteTarget.id;
+      await StaffRepository.delete(targetId);
+      setStaff(prev => prev.filter(member => member.id !== targetId));
       setDeleteTarget(null);
       setConfirmOpen(false);
     } catch (error) {
       setErrors({ submit: 'Error al eliminar el usuario' });
+    } finally {
+      setDeleting(false);
     }
   };
 
   const getRoleBadge = (rol: Rol) => {
-    const config = {
+    const config: Record<Rol, { label: string; className: string }> = {
       admin: { label: 'Administrador', className: 'bg-purple-500/20 text-purple-700 dark:text-purple-400' },
       veterinario: { label: 'Veterinario', className: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' },
       recepcionista: { label: 'Recepcionista', className: 'bg-sky-500/20 text-sky-700 dark:text-sky-400' },
@@ -174,12 +188,12 @@ export default function StaffPage() {
     }
   };
 
-  const stats = {
+  const stats = useMemo(() => ({
     total: staff.length,
     veterinarios: staff.filter(s => s.rol === 'veterinario').length,
     recepcionistas: staff.filter(s => s.rol === 'recepcionista').length,
     activos: staff.filter(s => s.activo).length,
-  };
+  }), [staff]);
 
   return (
     <div className="space-y-6">
@@ -489,8 +503,8 @@ export default function StaffPage() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSubmit}>
-              {editing ? 'Guardar Cambios' : 'Crear Usuario'}
+            <Button onClick={handleSubmit} disabled={saving}>
+              {saving ? 'Guardando...' : editing ? 'Guardar Cambios' : 'Crear Usuario'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -518,8 +532,8 @@ export default function StaffPage() {
             <Button variant="outline" onClick={() => { setConfirmOpen(false); setDeleteTarget(null); }}>
               Cancelar
             </Button>
-            <Button variant="destructive" onClick={handleDelete}>
-              Eliminar
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Eliminando...' : 'Eliminar'}
             </Button>
           </DialogFooter>
         </DialogContent>

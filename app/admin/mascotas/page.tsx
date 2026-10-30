@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,8 @@ export default function MascotasPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Mascota | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Mascota | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [form, setForm] = useState({
     clienteId: '', nombre: '', especie: 'Perro', sexo: 'Macho',
@@ -40,13 +42,16 @@ export default function MascotasPage() {
 
   useEffect(() => { loadData(); }, []);
 
-  const getCliente = (id: string) => clientes.find(c => c.id === id);
-  const filtered = mascotas.filter(m => {
+  const clientesById = useMemo(() => new Map(clientes.map(c => [c.id, c])), [clientes]);
+  const getCliente = (id: string) => clientesById.get(id);
+  const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    const matchSearch = m.nombre.toLowerCase().includes(q) || (m.raza || '').toLowerCase().includes(q) || m.especie.toLowerCase().includes(q);
-    const matchEspecie = filtroEspecie === 'all' || m.especie === filtroEspecie;
-    return matchSearch && matchEspecie;
-  });
+    return mascotas.filter(m => {
+      const matchSearch = m.nombre.toLowerCase().includes(q) || (m.raza || '').toLowerCase().includes(q) || m.especie.toLowerCase().includes(q);
+      const matchEspecie = filtroEspecie === 'all' || m.especie === filtroEspecie;
+      return matchSearch && matchEspecie;
+    });
+  }, [mascotas, search, filtroEspecie]);
 
   const openNew = () => {
     setEditing(null);
@@ -79,7 +84,8 @@ export default function MascotasPage() {
   };
 
   const handleSave = async () => {
-    if (!validate()) return;
+    if (saving || !validate()) return;
+    setSaving(true);
     const data = {
       clienteId: form.clienteId,
       nombre: form.nombre.trim(),
@@ -93,20 +99,32 @@ export default function MascotasPage() {
       microchip: form.microchip.trim() || null,
       notas: form.notas.trim() || null,
     };
-    if (editing) {
-      await MascotaRepository.update(editing.id, data);
-    } else {
-      await MascotaRepository.create(data);
+    try {
+      const saved = editing
+        ? await MascotaRepository.update(editing.id, data)
+        : await MascotaRepository.create(data);
+      if (!saved) return;
+      setMascotas(prev => editing
+        ? prev.map(mascota => mascota.id === saved.id ? saved : mascota)
+        : [...prev, saved]);
+      setDialogOpen(false);
+    } finally {
+      setSaving(false);
     }
-    setDialogOpen(false);
-    await loadData();
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
-    await MascotaRepository.delete(deleteTarget.id);
-    setDeleteTarget(null);
-    await loadData();
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const targetId = deleteTarget.id;
+      const ok = await MascotaRepository.delete(targetId);
+      if (!ok) return;
+      setMascotas(prev => prev.filter(mascota => mascota.id !== targetId));
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const edadMascota = (fechaNac: string) => {
@@ -261,7 +279,7 @@ export default function MascotasPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>{editing ? 'Guardar' : 'Crear'}</Button>
+            <Button onClick={handleSave} disabled={saving}>{saving ? 'Guardando...' : editing ? 'Guardar' : 'Crear'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -273,7 +291,7 @@ export default function MascotasPage() {
           <p className="text-sm text-muted-foreground">¿Eliminar a {deleteTarget?.nombre}? Se perderán todos sus registros clínicos.</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete}>Eliminar</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>{deleting ? 'Eliminando...' : 'Eliminar'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

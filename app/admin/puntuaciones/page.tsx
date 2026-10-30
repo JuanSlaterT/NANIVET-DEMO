@@ -349,7 +349,7 @@ export default function PuntuacionesPage() {
 
                 {selected.comentario && (
                   <div className="bg-muted/30 rounded-lg p-4">
-                    <p className="text-sm italic text-muted-foreground">"{selected.comentario}"</p>
+                    <p className="text-sm italic text-muted-foreground">&ldquo;{selected.comentario}&rdquo;</p>
                   </div>
                 )}
               </div>

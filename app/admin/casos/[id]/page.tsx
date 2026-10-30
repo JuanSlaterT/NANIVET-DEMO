@@ -68,21 +68,18 @@ export default function CasoDetailPage() {
       setCaso(c);
       setSoap(c.soap);
       setNuevoEstado(c.estado);
-      const mas = await MascotaRepository.getById(c.mascotaId);
-      if (cancelled) return;
-      setMascota(mas || null);
-      const v = await VeterinarioRepository.getById(c.veterinarioId);
-      if (cancelled) return;
-      setVet(v || null);
-      const [vac, tra, des, cir, exa] = await Promise.all([
+      const [mas, v, vac, tra, des, cir, exa, auds] = await Promise.all([
+        MascotaRepository.getById(c.mascotaId),
+        VeterinarioRepository.getById(c.veterinarioId),
         VacunaRepository.getByCaso(id), TratamientoRepository.getByCaso(id),
         DesparasitacionRepository.getByCaso(id), CirugiaRepository.getByCaso(id),
         ExamenRepository.getByCaso(id),
+        AuditRepository.getByEntidad('CasoClinico', id),
       ]);
       if (cancelled) return;
+      setMascota(mas || null);
+      setVet(v || null);
       setVacunas(vac); setTratamientos(tra); setDesparasitaciones(des); setCirugias(cir); setExamenes(exa);
-      const auds = await AuditRepository.getByEntidad('CasoClinico', id);
-      if (cancelled) return;
       setAuditLogs(auds);
       setLoading(false);
     })();
@@ -90,7 +87,7 @@ export default function CasoDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [casoId]);
+  }, [casoId, router]);
 
   const saveSoap = async () => {
     if (!caso) return;
@@ -125,20 +122,20 @@ export default function CasoDetailPage() {
       fecha: tratamientoForm.fecha,
       veterinarioId: tratamientoForm.veterinarioId,
     };
-    if (editingTratamiento) {
-      await TratamientoRepository.update(editingTratamiento.id, data);
-    } else {
-      await TratamientoRepository.create(data);
-    }
-    const updated = await TratamientoRepository.getByCaso(caso.id);
-    setTratamientos(updated);
+    const saved = editingTratamiento
+      ? await TratamientoRepository.update(editingTratamiento.id, data)
+      : await TratamientoRepository.create(data);
+    if (!saved) return;
+    setTratamientos(prev => editingTratamiento
+      ? prev.map(t => t.id === saved.id ? saved : t)
+      : [...prev, saved]);
     setTratamientoDialogOpen(false);
   };
 
   const handleDeleteTratamiento = async (id: string) => {
-    await TratamientoRepository.delete(id);
-    const updated = await TratamientoRepository.getByCaso(caso.id);
-    setTratamientos(updated);
+    if (!caso) return;
+    const deleted = await TratamientoRepository.delete(id);
+    if (deleted) setTratamientos(prev => prev.filter(t => t.id !== id));
   };
 
   const handleAiSOAP = async () => {

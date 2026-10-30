@@ -74,11 +74,11 @@ export default function CampanasPage() {
       clienteId: d.clienteId,
       mascotaId: d.mascotaId,
       motivo: d.motivo,
-      fechaEnviado: null,
-      enviadoPor: null,
     }));
-    const nuevos = await CampanaRepository.enviar(segmentoActivo, enviosData, 'Admin NANIVET');
-    setEnvios([...nuevos, ...envios]);
+    const resultado = await CampanaRepository.enviar(segmentoActivo, enviosData);
+    if (resultado.error) {
+      console.error('Error al enviar campaña:', resultado.error);
+    }
     setEnviando(false);
   };
 
@@ -178,7 +178,7 @@ export default function CampanasPage() {
                         {mas && <Badge variant="outline" className="text-[10px]">{mas.nombre}</Badge>}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">{dest.motivo}</p>
-                      <div className="mt-2 bg-accent/30 rounded-lg p-2 text-xs italic text-muted-foreground">"{msg}"</div>
+                      <div className="mt-2 bg-accent/30 rounded-lg p-2 text-xs italic text-muted-foreground">&ldquo;{msg}&rdquo;</div>
                     </div>
                     <Button asChild size="sm" variant="outline" className="gap-1.5 shrink-0">
                       <a href={buildWhatsAppUrl(cli.telefono, msg)} target="_blank" rel="noopener noreferrer">

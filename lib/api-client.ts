@@ -1,6 +1,8 @@
 // API Client - Conexión frontend al backend NANIVET
 // Transforma camelCase (frontend) a snake_case (backend) y maneja autenticación JWT
 
+import { startLoading, stopLoading } from './loading-manager';
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
 // ==================== TYPES ====================
@@ -53,30 +55,6 @@ export interface UserResponse {
   rol: string;
   veterinario_id?: string | null;
 }
-
-// ==================== LOADING MANAGER ====================
-// Import dynamically to avoid server-side issues
-const getLoadingManager = () => {
-  if (typeof window === 'undefined') return null;
-  return {
-    startLoading: (msg: string) => {
-      try {
-        const { startLoading } = require('./loading-manager');
-        startLoading(msg);
-      } catch {
-        // Loading manager not available
-      }
-    },
-    stopLoading: () => {
-      try {
-        const { stopLoading } = require('./loading-manager');
-        stopLoading();
-      } catch {
-        // Loading manager not available
-      }
-    }
-  };
-};
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -245,24 +223,90 @@ async function handleTokenExpired(): Promise<string | null> {
   }
 }
 
-/** Fetch with auth header and response transformation */
-async function fetchApi<T>(
-  url: string,
-  options: RequestInit = {}
-): Promise<ApiResponse<T>> {
-  const token = getAuthToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
+const inFlightGetRequests = new Map<string, Promise<ApiResponse<unknown>>>();
+const getResponseCache = new Map<string, {
+  response: ApiResponse<unknown>;
+  expiresAt: number;
+}>();
+const GET_CACHE_TTL_MS = 10_000;
+const MUTATION_LOADING_DELAY_MS = 180;
+let cacheGeneration = 0;
+let activeMutations = 0;
+let nextCachePruneAt = 0;
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+function cloneApiResponse<T>(response: ApiResponse<T>): ApiResponse<T> {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(response);
   }
 
-  // Show loading screen for API calls
-  const loading = getLoadingManager();
-  loading?.startLoading('Cargando...');
+  // API responses originate as JSON, so this fallback preserves their data
+  // shape while keeping cached values isolated from consumer mutations.
+  return JSON.parse(JSON.stringify(response)) as ApiResponse<T>;
+}
+
+function invalidateGetCache(): void {
+  cacheGeneration += 1;
+  getResponseCache.clear();
+  inFlightGetRequests.clear();
+  nextCachePruneAt = 0;
+}
+
+function pruneExpiredGetCache(now: number): void {
+  if (now < nextCachePruneAt) return;
+
+  for (const [key, cached] of Array.from(getResponseCache.entries())) {
+    if (cached.expiresAt <= now) {
+      getResponseCache.delete(key);
+    }
+  }
+  nextCachePruneAt = now + GET_CACHE_TTL_MS;
+}
+
+/** Parse JSON when present while allowing successful 204/empty responses. */
+async function parseResponseBody(response: Response): Promise<any> {
+  const text = await response.text();
+  if (!text.trim()) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+function buildHeaders(headersInit: HeadersInit | undefined, token: string | null): Headers {
+  const headers = new Headers(headersInit);
+
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  return headers;
+}
+
+/** Execute one API request with auth, refresh/retry and response transformation. */
+async function executeFetchApi<T>(
+  url: string,
+  options: RequestInit,
+  token: string | null,
+  isMutation: boolean,
+): Promise<ApiResponse<T>> {
+  const headers = buildHeaders(options.headers, token);
+  let loadingTimer: ReturnType<typeof setTimeout> | null = null;
+  let loadingStarted = false;
+
+  // Fast mutations should not flash a full-screen overlay. GET requests never
+  // activate it because their pages already render their own loading states.
+  if (isMutation && typeof window !== 'undefined') {
+    loadingTimer = setTimeout(() => {
+      loadingStarted = true;
+      startLoading('Guardando...');
+    }, MUTATION_LOADING_DELAY_MS);
+  }
 
   try {
     const response = await fetch(url, {
@@ -270,7 +314,7 @@ async function fetchApi<T>(
       headers,
     });
 
-    const data = await response.json();
+    const data = await parseResponseBody(response);
 
     // Handle token expiration: try automatic refresh
     if (response.status === 401 && (data.error?.code === 'TOKEN_EXPIRED' || data.error?.code === 'UNAUTHORIZED')) {
@@ -278,18 +322,14 @@ async function fetchApi<T>(
       
       if (newToken) {
         // Retry the request with the new token
-        const retryHeaders: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...options.headers,
-          'Authorization': `Bearer ${newToken}`,
-        };
+        const retryHeaders = buildHeaders(options.headers, newToken);
 
         const retryResponse = await fetch(url, {
           ...options,
           headers: retryHeaders,
         });
 
-        const retryData = await retryResponse.json();
+        const retryData = await parseResponseBody(retryResponse);
 
         if (!retryResponse.ok) {
           return {
@@ -345,9 +385,89 @@ async function fetchApi<T>(
       },
     };
   } finally {
-    // Hide loading screen after API call completes
-    loading?.stopLoading();
+    if (loadingTimer) {
+      clearTimeout(loadingTimer);
+    }
+    if (loadingStarted) {
+      stopLoading();
+    }
   }
+}
+
+/**
+ * Fetch with auth header and response transformation.
+ * Concurrent identical GETs share one network request and successful results
+ * are cached briefly. Every caller receives its own clone so local sorting or
+ * mutation cannot affect the cache or another consumer.
+ */
+function fetchApi<T>(
+  url: string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> {
+  const method = (options.method || 'GET').toUpperCase();
+  const token = getAuthToken();
+  const isGet = method === 'GET';
+  const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+
+  if (!isGet) {
+    if (!isMutation) {
+      return executeFetchApi<T>(url, options, token, false);
+    }
+
+    activeMutations += 1;
+    invalidateGetCache();
+
+    return executeFetchApi<T>(url, options, token, true).finally(() => {
+      activeMutations = Math.max(0, activeMutations - 1);
+    });
+  }
+
+  const requestKey = `${token || 'anonymous'}:${url}`;
+  const now = Date.now();
+  pruneExpiredGetCache(now);
+  const cachedResponse = getResponseCache.get(requestKey);
+  if (activeMutations === 0 && cachedResponse) {
+    if (cachedResponse.expiresAt > now) {
+      return Promise.resolve(
+        cloneApiResponse(cachedResponse.response) as ApiResponse<T>
+      );
+    }
+    getResponseCache.delete(requestKey);
+  }
+
+  const existingRequest = inFlightGetRequests.get(requestKey);
+  if (existingRequest) {
+    return existingRequest.then(
+      response => cloneApiResponse(response) as ApiResponse<T>
+    );
+  }
+
+  const requestGeneration = cacheGeneration;
+  const canCacheRequest = activeMutations === 0;
+  const request = executeFetchApi<T>(url, options, token, false)
+    .then(response => {
+      if (
+        !response.error &&
+        canCacheRequest &&
+        activeMutations === 0 &&
+        requestGeneration === cacheGeneration
+      ) {
+        getResponseCache.set(requestKey, {
+          response: cloneApiResponse(response) as ApiResponse<unknown>,
+          expiresAt: Date.now() + GET_CACHE_TTL_MS,
+        });
+      }
+
+      return response;
+    })
+    .finally(() => {
+      if (inFlightGetRequests.get(requestKey) === request) {
+        inFlightGetRequests.delete(requestKey);
+      }
+    });
+
+  inFlightGetRequests.set(requestKey, request as Promise<ApiResponse<unknown>>);
+  return request.then(response => cloneApiResponse(response));
 }
 
 // ==================== API METHODS ====================
@@ -591,7 +711,10 @@ export const api = {
     });
   },
 
-  async getSlotsOcupados(veterinarioId: string, fecha: string): Promise<ApiResponse<unknown[]>> {
+  async getSlotsOcupados(
+    veterinarioId: string,
+    fecha: string
+  ): Promise<ApiResponse<{ ocupados: string[]; bloqueado: boolean }>> {
     return fetchApi(`${API_BASE}/citas/veterinario/${veterinarioId}/slots?fecha=${fecha}`);
   },
 

@@ -7,9 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { PawPrint, Check, Calendar, Clock, User, Stethoscope, ChevronRight, ChevronLeft, CheckCircle2, ShieldCheck, Weight, DollarSign, CreditCard, Banknote } from 'lucide-react';
-import { VeterinarioRepository, CitaRepository, MascotaRepository, ClienteRepository, PesoRepository } from '@/lib/repositories';
-import { TIPOS_SERVICIO, formatDate, formatTime } from '@/lib/constants';
+import { PawPrint, Check, Calendar, User, Stethoscope, ChevronRight, ChevronLeft, CheckCircle2, ShieldCheck, Weight, DollarSign, CreditCard, Banknote } from 'lucide-react';
+import { VeterinarioRepository, CitaRepository } from '@/lib/repositories';
+import { TIPOS_SERVICIO, formatDate } from '@/lib/constants';
 import { VERSION_AVISO_PRIVACIDAD } from '@/lib/models';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -25,23 +25,6 @@ const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', '
 // Get day of week in JS format (0=Dom, 1=Lun, ..., 6=Sáb) using UTC to avoid timezone issues
 function getDayJS(date: Date): number {
   return date.getUTCDay();
-}
-
-/**
- * Parse fecha_hora string from backend into { fecha, hora }.
- * IMPORTANTE: fecha_hora llega como "2026-10-30T09:00:00.000Z" pero la "Z" es engañosa:
- * el valor ya es hora de Ecuador. NO restar 5 horas ni usar new Date()/getUTC*.
- * Lee fecha y hora directamente del string.
- * @returns { fecha: 'YYYY-MM-DD', hora: 'HH:mm' } o null si el formato no coincide
- */
-function parseCitaFechaHora(fechaHora: string): { fecha: string; hora: string } | null {
-  if (typeof fechaHora !== 'string') return null;
-  const match = fechaHora.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-  if (!match) return null;
-  return {
-    fecha: `${match[1]}-${match[2]}-${match[3]}`,
-    hora: `${match[4]}:${match[5]}`,
-  };
 }
 
 // Format date string using UTC methods
@@ -100,20 +83,27 @@ export default function AgendarPage() {
   
   // Cargar bloqueos cuando se selecciona un veterinario
   useEffect(() => {
-    if (!form.veterinarioId) {
-      setBloqueosByVet({});
-      return;
-    }
+    if (!form.veterinarioId || bloqueosByVet[form.veterinarioId]) return;
+
+    let cancelled = false;
     (async () => {
       const bloqueos = await VeterinarioRepository.getBloqueos(form.veterinarioId);
+      if (cancelled) return;
       const fechasBloqueo = bloqueos.map(b => b.fecha);
       setBloqueosByVet(prev => ({ ...prev, [form.veterinarioId]: fechasBloqueo }));
     })();
-  }, [form.veterinarioId]);
+
+    return () => { cancelled = true; };
+  }, [form.veterinarioId, bloqueosByVet]);
   
   // Generate available slots when vet + date changes
   useEffect(() => {
     if (!form.veterinarioId || !form.fecha) { setAvailableSlots([]); return; }
+
+    const fechasBloqueadas = bloqueosByVet[form.veterinarioId];
+    if (!fechasBloqueadas) { setAvailableSlots([]); return; }
+
+    let cancelled = false;
     (async () => {
       const vet = vets.find(v => v.id === form.veterinarioId);
       if (!vet) { setAvailableSlots([]); return; }
@@ -129,37 +119,12 @@ export default function AgendarPage() {
       if (!diasArray.includes(diaJS)) { setAvailableSlots([]); return; }
       
       // Check if date is blocked for this veterinarian
-      const bloqueos = await VeterinarioRepository.getBloqueos(form.veterinarioId);
-      const estaBloqueado = bloqueos.some(b => b.fecha === form.fecha);
+      const estaBloqueado = fechasBloqueadas.includes(form.fecha);
       if (estaBloqueado) { setAvailableSlots([]); return; }
       
-      // Get occupied slots from proximas citas
-      const proximas = await CitaRepository.getProximas(form.veterinarioId);
-      
-      const ocupados = new Set<string>();
-      proximas.forEach(cita => {
-        // No bloquear citas canceladas
-        if (cita.estado === 'cancelada') return;
-        
-        // fetchApi convierte snake_case → camelCase, así que el campo es fechaHora
-        const raw = cita.fechaHora ?? cita.fecha_hora;
-        if (typeof raw !== 'string') {
-          console.warn('[agendar] fechaHora no es string en cita:', cita);
-          return;
-        }
-        
-        const parsed = parseCitaFechaHora(raw);
-        if (!parsed) {
-          console.warn('[agendar] parseCitaFechaHora falló para:', raw, cita);
-          return;
-        }
-        
-        if (parsed.fecha === form.fecha) {
-          ocupados.add(parsed.hora);
-        }
-      });
-      
-      console.log('[agendar] ocupados', form.fecha, Array.from(ocupados));
+      // El endpoint de slots devuelve solo la disponibilidad del día seleccionado.
+      const ocupados = new Set(await CitaRepository.getSlotsOcupados(form.veterinarioId, form.fecha));
+      if (cancelled) return;
       
       // Usar el horario normalizado por el repository
       const inicio = vet.horario?.inicio ? parseInt(vet.horario.inicio.split(':')[0]) : 8;
@@ -190,9 +155,11 @@ export default function AgendarPage() {
         return true;
       });
       
-      setAvailableSlots(filteredSlots);
+      if (!cancelled) setAvailableSlots(filteredSlots);
     })();
-  }, [form.veterinarioId, form.fecha, vets]);
+
+    return () => { cancelled = true; };
+  }, [form.veterinarioId, form.fecha, vets, bloqueosByVet]);
 
   // Generate next 14 days for date picker with calendar navigation
   // Create dates in UTC to avoid timezone issues
@@ -201,21 +168,6 @@ export default function AgendarPage() {
   const maxDate = new Date(ecuadorTodayUTC);
   maxDate.setUTCDate(maxDate.getUTCDate() + 14);
   
-  const fechasDisponibles = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date(ecuadorTodayUTC);
-    d.setUTCDate(d.getUTCDate() + i);
-    const diaJS = d.getUTCDay(); // 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb
-    return {
-      value: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`,
-      label: `${DIAS_NOMBRES[diaJS]} ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]}`,
-      diaSemana: DIAS_NOMBRES[diaJS],
-      diaJS: diaJS,
-      day: d.getUTCDate(),
-      month: d.getUTCMonth(),
-      year: d.getUTCFullYear(),
-    };
-  });
-
   // Calendar grid for current displayed month (Lunes primero)
   // Create dates in UTC to avoid timezone issues
   const calendarDays = (() => {

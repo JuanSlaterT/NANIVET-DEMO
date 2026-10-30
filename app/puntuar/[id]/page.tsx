@@ -34,48 +34,62 @@ export default function PuntuarPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setCita(null);
+    setMascota(null);
+    setCliente(null);
+    setVeterinario(null);
+    setPuntuacion(null);
+
     (async () => {
       try {
         // Load cita
-        const citaData = CitaRepository.getById(citaId);
+        const citaData = await CitaRepository.getById(citaId);
+        if (cancelled) return;
         if (!citaData) {
           setError('Cita no encontrada');
           setLoading(false);
           return;
         }
 
+        const mascotaPromise = MascotaRepository.getById(citaData.mascotaId);
+        const vetPromise = VeterinarioRepository.getById(citaData.veterinarioId);
+        const puntuacionPromise = PuntuacionRepository.getByCitaIdOrCreate(citaId);
+        const mascotaData = await mascotaPromise;
+        const clientePromise = mascotaData
+          ? ClienteRepository.getById(mascotaData.clienteId)
+          : Promise.resolve(undefined);
+        const [clienteData, vetData, pnt] = await Promise.all([
+          clientePromise,
+          vetPromise,
+          puntuacionPromise,
+        ]);
+
+        if (cancelled) return;
+
         setCita(citaData);
-
-        // Load related data
-        const mascotaData = MascotaRepository.getById(citaData.mascotaId);
         setMascota(mascotaData || null);
-
-        if (mascotaData) {
-          const clienteData = ClienteRepository.getById(mascotaData.clienteId);
-          setCliente(clienteData || null);
-        }
-
-        const vetData = VeterinarioRepository.getById(citaData.veterinarioId);
+        setCliente(clienteData || null);
         setVeterinario(vetData || null);
-
-        // Load or create puntuación
-        let pnt = PuntuacionRepository.getByCita(citaId);
-        if (!pnt) {
-          pnt = await PuntuacionRepository.getByCitaIdOrCreate(citaId);
-        }
         setPuntuacion(pnt);
 
         // If already responded, show the response
-        if (pnt.respondida) {
+        if (pnt?.respondida) {
           setCalificacion(pnt.calificacion);
           setRecomienda(pnt.recomienda);
           setComentario(pnt.comentario || '');
         }
-      } catch (err) {
-        setError('Error al cargar la información');
+      } catch {
+        if (!cancelled) setError('Error al cargar la información');
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [citaId]);
 
   const handleSubmit = async () => {
@@ -84,14 +98,13 @@ export default function PuntuarPage() {
     setSubmitting(true);
     try {
       // Get the token for this puntuación
-      let pnt = PuntuacionRepository.getByCita(citaId);
+      let pnt = puntuacion;
       if (!pnt) {
         pnt = await PuntuacionRepository.getByCitaIdOrCreate(citaId);
       }
 
       if (!pnt?.token) {
         setError('Error: token no disponible');
-        setSubmitting(false);
         return;
       }
 
@@ -107,10 +120,11 @@ export default function PuntuarPage() {
       } else {
         setError('Ya has puntuado esta cita anteriormente');
       }
-    } catch (err) {
+    } catch {
       setError('Error al enviar la puntuación');
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   };
 
   if (loading) {
@@ -187,7 +201,7 @@ export default function PuntuarPage() {
 
               {/* Comment */}
               {puntuacion.comentario && (
-                <p className="text-sm italic text-muted-foreground">"{puntuacion.comentario}"</p>
+                <p className="text-sm italic text-muted-foreground">&ldquo;{puntuacion.comentario}&rdquo;</p>
               )}
 
               {/* Info */}

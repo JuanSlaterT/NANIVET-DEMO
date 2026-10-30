@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,11 +16,15 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { AlertTriangle, ArrowLeft, PawPrint, Syringe, Pill, Scissors, FileText, Calendar, TrendingUp, MessageCircle, User, ClipboardList, Sparkles, Plus, Edit, Trash2, HeartPulse } from 'lucide-react';
 import { MascotaRepository, ClienteRepository, CitaRepository, CasoRepository, VacunaRepository, TratamientoRepository, DesparasitacionRepository, CirugiaRepository, ExamenRepository, PesoRepository, AuditRepository, HospitalizacionRepository, MedicacionRepository, VeterinarioRepository } from '@/lib/repositories';
 import { formatDate, formatDateTime, buildWhatsAppUrl, ESTADOS_CITA, ESTADOS_CASO, TIPOS_SERVICIO, ESTADOS_HOSPITALIZACION } from '@/lib/constants';
-import type { Mascota, Cliente, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, PesoRegistrado, AuditLog, Hospitalizacion, Medicacion } from '@/lib/models';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import type { Mascota, Cliente, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, PesoRegistrado, AuditLog, Hospitalizacion, Medicacion, Veterinario } from '@/lib/models';
 import { useAuth } from '@/components/auth-provider';
 import { summarizeHistory } from '@/lib/ai-service';
 import { ROLES_CLINICOS } from '@/lib/constants';
+
+const WeightChart = dynamic(
+  () => import('@/components/admin/weight-chart').then((module) => module.WeightChart),
+  { ssr: false, loading: () => <div className="h-[300px]" /> }
+);
 
 type TimelineEvent = { id: string; fecha: string; titulo: string; descripcion: string; tipo: string; icon: React.ComponentType<{ className?: string }>; color: string };
 
@@ -83,11 +88,8 @@ export default function MascotaDetailPage() {
       }
       
       setMascota(mas);
-      const cli = await ClienteRepository.getById(mas.clienteId);
-      if (cancelled) return;
-      setCliente(cli || null);
-      
-      const [c, cas, vac, tra, des, cir, exa, pes, hosps, meds, vets] = await Promise.all([
+      const [cli, c, cas, vac, tra, des, cir, exa, pes, hosps, meds, vets, auds] = await Promise.all([
+        ClienteRepository.getById(mas.clienteId),
         CitaRepository.getByMascota(mascotaId),
         CasoRepository.getByMascota(mascotaId),
         VacunaRepository.getByMascota(mascotaId),
@@ -99,24 +101,23 @@ export default function MascotaDetailPage() {
         HospitalizacionRepository.getByMascota(mascotaId),
         MedicacionRepository.getByMascota(mascotaId),
         VeterinarioRepository.getAll(),
+        AuditRepository.getByEntidad('Mascota', mascotaId),
       ]);
       
       if (cancelled) return;
       
-      setCitas(c.sort((a, b) => b.fechaHora.localeCompare(a.fechaHora)));
-      setCasos(cas.sort((a, b) => b.fecha.localeCompare(a.fecha)));
-      setVacunas(vac.sort((a, b) => b.fechaAplicacion.localeCompare(a.fechaAplicacion)));
-      setTratamientos(tra.sort((a, b) => b.fecha.localeCompare(a.fecha)));
-      setDesparasitaciones(des.sort((a, b) => b.fecha.localeCompare(a.fecha)));
-      setCirugias(cir.sort((a, b) => b.fecha.localeCompare(a.fecha)));
-      setExamenes(exa.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+      setCliente(cli || null);
+      setCitas([...c].sort((a, b) => b.fechaHora.localeCompare(a.fechaHora)));
+      setCasos([...cas].sort((a, b) => b.fecha.localeCompare(a.fecha)));
+      setVacunas([...vac].sort((a, b) => b.fechaAplicacion.localeCompare(a.fechaAplicacion)));
+      setTratamientos([...tra].sort((a, b) => b.fecha.localeCompare(a.fecha)));
+      setDesparasitaciones([...des].sort((a, b) => b.fecha.localeCompare(a.fecha)));
+      setCirugias([...cir].sort((a, b) => b.fecha.localeCompare(a.fecha)));
+      setExamenes([...exa].sort((a, b) => b.fecha.localeCompare(a.fecha)));
       setPesos(pes);
       setHospitalizaciones(hosps);
       setMedicaciones(meds);
       setVeterinarios(vets);
-      
-      const auds = await AuditRepository.getByEntidad('Mascota', mascotaId);
-      if (cancelled) return;
       setAuditLogs(auds);
       setLoading(false);
     })();
@@ -124,7 +125,7 @@ export default function MascotaDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [mascotaId]);
+  }, [mascotaId, router]);
 
   // ==================== TRATAMIENTO CRUD ====================
   const openNewTratamiento = () => {
@@ -150,37 +151,35 @@ export default function MascotaDetailPage() {
       veterinarioId: tratamientoForm.veterinarioId,
       casoId: tratamientoForm.casoId || null,
     };
-    if (editingTratamiento) {
-      await TratamientoRepository.update(editingTratamiento.id, data);
-    } else {
-      await TratamientoRepository.create(data);
-    }
-    const updated = await TratamientoRepository.getByMascota(mascota!.id);
-    setTratamientos(updated.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+    const saved = editingTratamiento
+      ? await TratamientoRepository.update(editingTratamiento.id, data)
+      : await TratamientoRepository.create(data);
+    if (!saved) return;
+    setTratamientos(prev => (editingTratamiento
+      ? prev.map(t => t.id === saved.id ? saved : t)
+      : [...prev, saved]
+    ).sort((a, b) => b.fecha.localeCompare(a.fecha)));
     setTratamientoDialogOpen(false);
   };
 
   const handleDeleteTratamiento = async (id: string) => {
-    await TratamientoRepository.delete(id);
-    const updated = await TratamientoRepository.getByMascota(mascota!.id);
-    setTratamientos(updated.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+    const deleted = await TratamientoRepository.delete(id);
+    if (deleted) setTratamientos(prev => prev.filter(t => t.id !== id));
   };
 
   // ==================== VACUNA DELETE ====================
   const handleDeleteVacuna = async (id: string) => {
     if (confirm('¿Eliminar esta vacuna?')) {
-      await VacunaRepository.delete(id);
-      const updated = await VacunaRepository.getByMascota(mascota!.id);
-      setVacunas(updated.sort((a, b) => b.fechaAplicacion.localeCompare(a.fechaAplicacion)));
+      const deleted = await VacunaRepository.delete(id);
+      if (deleted) setVacunas(prev => prev.filter(v => v.id !== id));
     }
   };
 
   // ==================== DESPARASITACION DELETE ====================
   const handleDeleteDesparasitacion = async (id: string) => {
     if (confirm('¿Eliminar esta desparasitación?')) {
-      await DesparasitacionRepository.delete(id);
-      const updated = await DesparasitacionRepository.getByMascota(mascota!.id);
-      setDesparasitaciones(updated.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+      const deleted = await DesparasitacionRepository.delete(id);
+      if (deleted) setDesparasitaciones(prev => prev.filter(d => d.id !== id));
     }
   };
 
@@ -217,22 +216,24 @@ export default function MascotaDetailPage() {
       fechaFin: null,
       tomas: [],
     };
+    let saved: Medicacion;
     if (editingMedicacion) {
       // Update: delete old and create new (since medicaciones are tied to hospitalization)
-      await MedicacionRepository.delete(editingMedicacion.id);
-      await MedicacionRepository.create(data);
+      const deleted = await MedicacionRepository.delete(editingMedicacion.id);
+      if (!deleted) return;
+      saved = await MedicacionRepository.create(data);
     } else {
-      await MedicacionRepository.create(data);
+      saved = await MedicacionRepository.create(data);
     }
-    const updated = await MedicacionRepository.getByMascota(mascota!.id);
-    setMedicaciones(updated);
+    setMedicaciones(prev => editingMedicacion
+      ? [...prev.filter(m => m.id !== editingMedicacion.id), saved]
+      : [...prev, saved]);
     setMedicacionDialogOpen(false);
   };
 
   const handleDeleteMedicacion = async (id: string) => {
-    await MedicacionRepository.delete(id);
-    const updated = await MedicacionRepository.getByMascota(mascota!.id);
-    setMedicaciones(updated);
+    const deleted = await MedicacionRepository.delete(id);
+    if (deleted) setMedicaciones(prev => prev.filter(m => m.id !== id));
   };
 
   const handleAISummary = async () => {
@@ -492,15 +493,7 @@ export default function MascotaDetailPage() {
             <CardHeader><CardTitle className="text-base">Evolución de peso (kg)</CardTitle></CardHeader>
             <CardContent>
               {pesoData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={pesoData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="fecha" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
-                    <YAxis tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} domain={['dataMin - 1', 'dataMax + 1']} />
-                    <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }} />
-                    <Line type="monotone" dataKey="peso" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ fill: 'hsl(var(--primary))', r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <WeightChart data={pesoData} />
               ) : (
                 <p className="text-center text-muted-foreground py-8">Sin registros de peso</p>
               )}

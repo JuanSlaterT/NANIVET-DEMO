@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,8 @@ export default function ClientesPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [deleteTarget, setDeleteTarget] = useState<Cliente | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = async () => {
     const [cli, mas] = await Promise.all([
@@ -38,12 +40,20 @@ export default function ClientesPage() {
 
   useEffect(() => { loadData(); }, []);
 
-  const filtered = clientes.filter(c => {
+  const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return c.nombre.toLowerCase().includes(q) || c.apellido.toLowerCase().includes(q) || c.cedula.includes(q) || c.telefono.includes(q);
-  });
+    return clientes.filter(c => c.nombre.toLowerCase().includes(q) || c.apellido.toLowerCase().includes(q) || c.cedula.includes(q) || c.telefono.includes(q));
+  }, [clientes, search]);
 
-  const getMascotasCount = (cliId: string) => mascotas.filter(m => m.clienteId === cliId).length;
+  const mascotasCountByCliente = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const mascota of mascotas) {
+      counts.set(mascota.clienteId, (counts.get(mascota.clienteId) ?? 0) + 1);
+    }
+    return counts;
+  }, [mascotas]);
+
+  const getMascotasCount = (cliId: string) => mascotasCountByCliente.get(cliId) ?? 0;
 
   const openNew = () => {
     setEditing(null);
@@ -73,7 +83,8 @@ export default function ClientesPage() {
   };
 
   const handleSave = async () => {
-    if (!validate()) return;
+    if (saving || !validate()) return;
+    setSaving(true);
     const data = {
       nombre: form.nombre.trim(),
       apellido: form.apellido.trim(),
@@ -82,30 +93,41 @@ export default function ClientesPage() {
       email: form.email.trim() || null,
       direccion: form.direccion.trim() || null,
     };
-    if (editing) {
-      await ClienteRepository.update(editing.id, data);
-    } else {
-      await ClienteRepository.create({
-        ...data,
-        consentimientoDatos: { aceptado: true, fechaHora: new Date().toISOString(), versionAviso: VERSION_AVISO_PRIVACIDAD },
-        consentimientoComunicaciones: { aceptado: false, fechaHora: null },
-        fechaRevocacion: null,
-      });
+    try {
+      const saved = editing
+        ? await ClienteRepository.update(editing.id, data)
+        : await ClienteRepository.create({
+            ...data,
+            consentimientoDatos: { aceptado: true, fechaHora: new Date().toISOString(), versionAviso: VERSION_AVISO_PRIVACIDAD },
+            consentimientoComunicaciones: { aceptado: false, fechaHora: null },
+            fechaRevocacion: null,
+          });
+      if (!saved) return;
+      setClientes(prev => editing
+        ? prev.map(cliente => cliente.id === saved.id ? saved : cliente)
+        : [...prev, saved]);
+      setDialogOpen(false);
+    } finally {
+      setSaving(false);
     }
-    setDialogOpen(false);
-    await loadData();
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
-    const ok = await ClienteRepository.delete(deleteTarget.id);
-    if (!ok) {
-      setDeleteError('No se puede eliminar: el cliente tiene mascotas registradas');
-      return;
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const targetId = deleteTarget.id;
+      const ok = await ClienteRepository.delete(targetId);
+      if (!ok) {
+        setDeleteError('No se puede eliminar: el cliente tiene mascotas registradas');
+        return;
+      }
+      setClientes(prev => prev.filter(cliente => cliente.id !== targetId));
+      setDeleteTarget(null);
+      setDeleteError('');
+    } finally {
+      setDeleting(false);
     }
-    setDeleteTarget(null);
-    setDeleteError('');
-    await loadData();
   };
 
   if (loading) {
@@ -228,7 +250,7 @@ export default function ClientesPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>{editing ? 'Guardar' : 'Crear'}</Button>
+            <Button onClick={handleSave} disabled={saving}>{saving ? 'Guardando...' : editing ? 'Guardar' : 'Crear'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -249,7 +271,7 @@ export default function ClientesPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteError(''); }}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={!!deleteError}>Eliminar</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={!!deleteError || deleting}>{deleting ? 'Eliminando...' : 'Eliminar'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

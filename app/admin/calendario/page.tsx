@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,26 +44,6 @@ export default function CalendarioPage() {
     }
   }, [user]);
 
-  // Load bloqueos based on selected vet
-  const loadBloqueos = async (vetId: string | 'all' | null, currentVets: Veterinario[]) => {
-    if (!vetId) {
-      setBloqueos([]);
-      return;
-    }
-    if (vetId === 'all') {
-      // Load bloqueos for all vets
-      const allBloqueos: HorarioBloqueado[] = [];
-      for (const vet of currentVets) {
-        const b = await VeterinarioRepository.getBloqueos(vet.id);
-        allBloqueos.push(...b);
-      }
-      setBloqueos(allBloqueos);
-    } else {
-      const b = await VeterinarioRepository.getBloqueos(vetId);
-      setBloqueos(b);
-    }
-  };
-
   // Load all data once on mount
   useEffect(() => {
     (async () => {
@@ -79,18 +59,28 @@ export default function CalendarioPage() {
 
   // Load bloqueos when selectedVetId changes
   useEffect(() => {
-    if (!user) return;
-    (async () => {
-      await loadBloqueos(selectedVetId, vets);
-    })();
-  }, [selectedVetId, user]);
+    if (!user || !selectedVetId) {
+      setBloqueos([]);
+      return;
+    }
 
-  const getMascota = (id: string) => mascotas.find(m => m.id === id);
+    let cancelled = false;
+    (async () => {
+      const nextBloqueos = selectedVetId === 'all'
+        ? (await Promise.all(vets.map(vet => VeterinarioRepository.getBloqueos(vet.id)))).flat()
+        : await VeterinarioRepository.getBloqueos(selectedVetId);
+      if (!cancelled) setBloqueos(nextBloqueos);
+    })();
+
+    return () => { cancelled = true; };
+  }, [selectedVetId, user, vets]);
+
+  const mascotasById = useMemo(() => new Map(mascotas.map(m => [m.id, m])), [mascotas]);
 
   // Build all events
-  const allEvents: CalEvent[] = [
+  const allEvents = useMemo<CalEvent[]>(() => [
     ...citas.map(c => {
-      const mas = getMascota(c.mascotaId);
+      const mas = mascotasById.get(c.mascotaId);
       return {
         id: c.id, fecha: c.fechaHora.slice(0, 10),
         titulo: `${mas?.nombre || 'N/A'} - ${TIPOS_SERVICIO[c.tipoServicio].label}`,
@@ -99,7 +89,7 @@ export default function CalendarioPage() {
       };
     }),
     ...vacunas.map(v => {
-      const mas = getMascota(v.mascotaId);
+      const mas = mascotasById.get(v.mascotaId);
       return {
         id: v.id, fecha: v.proximaDosis,
         titulo: `${mas?.nombre || 'N/A'} - Vac. ${v.nombre}`,
@@ -107,17 +97,32 @@ export default function CalendarioPage() {
       };
     }),
     ...cirugias.map(c => {
-      const mas = getMascota(c.mascotaId);
+      const mas = mascotasById.get(c.mascotaId);
       return {
         id: c.id, fecha: c.fecha,
         titulo: `${mas?.nombre || 'N/A'} - Cirugía: ${c.tipo}`,
         color: 'bg-red-500', tipo: 'Cirugía', hora: '08:00',
       };
     }),
-  ];
+  ], [citas, vacunas, cirugias, mascotasById]);
 
-  const getEventsForDate = (dateStr: string) => allEvents.filter(e => e.fecha === dateStr);
-  const isBlocked = (dateStr: string) => bloqueos.some(b => b.fecha === dateStr);
+  const eventsByDate = useMemo(() => {
+    const index = new Map<string, CalEvent[]>();
+    for (const event of allEvents) {
+      const dayEvents = index.get(event.fecha);
+      if (dayEvents) dayEvents.push(event);
+      else index.set(event.fecha, [event]);
+    }
+    index.forEach((dayEvents) => {
+      dayEvents.sort((a, b) => a.hora.localeCompare(b.hora));
+    });
+    return index;
+  }, [allEvents]);
+
+  const blockedDates = useMemo(() => new Set(bloqueos.map(b => b.fecha)), [bloqueos]);
+
+  const getEventsForDate = (dateStr: string) => eventsByDate.get(dateStr) ?? [];
+  const isBlocked = (dateStr: string) => blockedDates.has(dateStr);
 
   const prevPeriod = () => {
     const d = new Date(fechaActual);
@@ -287,7 +292,7 @@ export default function CalendarioPage() {
                       {blocked && <span className="ml-1" title="Día bloqueado">🔒</span>}
                     </div>
                     <div className="space-y-1">
-                      {events.sort((a, b) => a.hora.localeCompare(b.hora)).map(e => (
+                      {events.map(e => (
                         <div key={`${e.id}-${e.tipo}`} className={`cal-event ${e.color} text-white`} onClick={() => setSelectedEvent(e)}>
                           <span className="font-mono">{e.hora}</span> {e.titulo}
                         </div>

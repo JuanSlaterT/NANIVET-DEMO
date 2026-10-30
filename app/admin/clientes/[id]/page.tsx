@@ -19,15 +19,22 @@ export default function ClienteDetailPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       const id = params.id as string;
-      const cli = ClienteRepository.getById(id);
+      const [cli, mas] = await Promise.all([
+        ClienteRepository.getById(id),
+        MascotaRepository.getByCliente(id),
+      ]);
+      if (cancelled) return;
       if (!cli) { router.push('/admin/clientes'); return; }
       setCliente(cli);
-      const mas = await MascotaRepository.getByCliente(id);
       setMascotas(mas);
       setLoading(false);
     })();
+
+    return () => { cancelled = true; };
   }, [params, router]);
 
   if (loading || !cliente) {

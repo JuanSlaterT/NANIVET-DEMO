@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandSeparator } from '@/components/ui/command';
 import { BusquedaRepository } from '@/lib/repositories';
@@ -12,26 +12,39 @@ interface SearchProps {
   onOpenChange: (open: boolean) => void;
 }
 
+interface SearchResults {
+  clientes: Array<{ id: string; nombre: string; apellido: string; cedula: string }>;
+  mascotas: Array<{ id: string; nombre: string; especie: string; raza?: string | null }>;
+  citas: Array<{ id: string; motivo: string; fechaHora: string }>;
+  casos: Array<{ id: string; motivo: string; diagnostico: string }>;
+}
+
+const EMPTY_RESULTS: SearchResults = { clientes: [], mascotas: [], citas: [], casos: [] };
+
 export function GlobalSearch({ open, onOpenChange }: SearchProps) {
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<{
-    clientes: Array<{ id: string; nombre: string; apellido: string; cedula: string }>;
-    mascotas: Array<{ id: string; nombre: string; especie: string; raza?: string | null }>;
-    citas: Array<{ id: string; motivo: string; fechaHora: string }>;
-    casos: Array<{ id: string; motivo: string; diagnostico: string }>;
-  }>({ clientes: [], mascotas: [], citas: [], casos: [] });
+  const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);
+  const requestSequence = useRef(0);
 
   useEffect(() => {
-    if (!query.trim() || query.length < 2) {
-      setResults({ clientes: [], mascotas: [], citas: [], casos: [] });
+    const normalizedQuery = query.trim();
+    const currentRequest = ++requestSequence.current;
+
+    if (normalizedQuery.length < 2) {
+      setResults(EMPTY_RESULTS);
       return;
     }
-    let cancelled = false;
-    BusquedaRepository.global(query).then((r) => {
-      if (!cancelled) setResults(r);
-    });
-    return () => { cancelled = true; };
+
+    const timeoutId = window.setTimeout(() => {
+      BusquedaRepository.global(normalizedQuery).then((response) => {
+        if (requestSequence.current === currentRequest) {
+          setResults(response);
+        }
+      });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
   }, [query]);
 
   const navigate = (href: string) => {

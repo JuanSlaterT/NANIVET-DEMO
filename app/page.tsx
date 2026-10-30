@@ -1,9 +1,8 @@
-'use client';
-
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { ThemeToggle } from '@/components/theme-toggle';
 import {
   PawPrint,
   Calendar,
@@ -23,19 +22,10 @@ import {
   Scissors,
   Activity,
   Sparkles,
-  Moon,
-  Sun,
 } from 'lucide-react';
-import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
 
 
 export default function LandingPage() {
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
-
   const stats = [
     { value: '+500', label: 'Mascotas atendidas', icon: PawPrint },
     { value: '3', label: 'Veterinarios expertos', icon: Stethoscope },
@@ -86,16 +76,7 @@ export default function LandingPage() {
               <img src="/logo.svg" alt="NANIVET Logo" className="h-11 w-auto" />
             </Link>
           <div className="flex items-center gap-2 sm:gap-3">
-            {mounted && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="w-9 h-9 rounded-xl"
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              >
-                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
-            )}
+            <ThemeToggle />
             <Link href="/agendar" className="hidden sm:inline-flex">
               <Button variant="ghost" size="sm" className="text-primary/90 hover:text-primary hover:bg-primary/10 rounded-xl">
                 <Calendar className="h-4 w-4 mr-2" /> Agendar cita
@@ -405,7 +386,7 @@ export default function LandingPage() {
                     <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
                   ))}
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed mb-6 italic">"{t.text}"</p>
+                <p className="text-sm text-muted-foreground leading-relaxed mb-6 italic">&quot;{t.text}&quot;</p>
                 <div className="flex items-center gap-3 pt-4 border-t border-border/50">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
                     <Users className="h-4 w-4 text-primary" />
