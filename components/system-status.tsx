@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AlertCircle, Cloud, CloudOff, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ export function SystemStatus() {
   const [apiAvailable, setApiAvailable] = useState(true);
   const [problem, setProblem] = useState<ApiProblem>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const authenticatedRef = useRef(false);
 
   useEffect(() => {
     setOnline(navigator.onLine);
@@ -41,19 +42,29 @@ export function SystemStatus() {
         context: detail?.context || 'cargar la información',
       });
     };
-    const handleExpired = () => setSessionExpired(true);
+    const handleAuthState = (event: Event) => {
+      authenticatedRef.current = Boolean((event as CustomEvent).detail?.authenticated);
+      if (!authenticatedRef.current) setSessionExpired(false);
+    };
+    const handleExpired = () => {
+      // Un 401 al comprobar si existe una sesión inicial es normal y no debe
+      // convertir la pantalla de login en un bucle de "sesión expirada".
+      if (authenticatedRef.current) setSessionExpired(true);
+    };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('nanivet:api-success', handleSuccess);
     window.addEventListener('nanivet:api-error', handleError);
     window.addEventListener('nanivet:session-expired', handleExpired);
+    window.addEventListener('nanivet:auth-state', handleAuthState);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('nanivet:api-success', handleSuccess);
       window.removeEventListener('nanivet:api-error', handleError);
       window.removeEventListener('nanivet:session-expired', handleExpired);
+      window.removeEventListener('nanivet:auth-state', handleAuthState);
     };
   }, []);
 

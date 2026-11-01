@@ -78,6 +78,7 @@ function toCamelCase(obj: Record<string, unknown> | Record<string, unknown>[]): 
 
 // ==================== TOKEN REFRESH ====================
 let isRefreshing = false;
+let sessionExpiredNotified = false;
 let failedQueue: Array<{
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
@@ -116,11 +117,18 @@ async function refreshAccessToken(): Promise<string> {
     if (!data.data?.user) {
       throw new Error('El servidor no devolvió una sesión renovada');
     }
+    sessionExpiredNotified = false;
     return 'cookie-session';
   } catch (error) {
     // Clear auth on refresh failure
     throw error;
   }
+}
+
+function notifySessionExpired(): void {
+  if (typeof window === 'undefined' || sessionExpiredNotified) return;
+  sessionExpiredNotified = true;
+  window.dispatchEvent(new CustomEvent('nanivet:session-expired'));
 }
 
 /** Handle a 401/TOKEN_EXPIRED response by refreshing the token */
@@ -460,9 +468,7 @@ async function executeFetchApi<T>(
           message: 'Sesión expirada. Por favor, inicia sesión nuevamente.',
         };
         if (!suppressFeedback) showApiError(error, method, url, 401);
-        if (!suppressFeedback && typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('nanivet:session-expired'));
-        }
+        if (!suppressFeedback) notifySessionExpired();
         return { error };
       }
     }
@@ -591,6 +597,7 @@ export const api = {
       body: JSON.stringify(credentials),
     });
 
+    if (response.data?.user) sessionExpiredNotified = false;
     return response;
   },
 

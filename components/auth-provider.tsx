@@ -38,6 +38,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('nanivet:auth-state', {
+      detail: { authenticated: Boolean(user), loading },
+    }));
+  }, [user, loading]);
+
   const login = async (email: string, password: string): Promise<boolean> => {
     const u = await AuthRepository.login(email, password);
     if (u) {
