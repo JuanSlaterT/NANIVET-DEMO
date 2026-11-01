@@ -69,7 +69,7 @@ export function SystemStatus() {
   }, []);
 
   useEffect(() => {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+    const apiBase = '/api';
     let controller: AbortController | null = null;
 
     const checkServer = async () => {

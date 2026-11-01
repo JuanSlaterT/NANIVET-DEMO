@@ -8,7 +8,7 @@ import type {
   DiagnosticoDiferencial,
 } from './models';
 
-const IA_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/ia`;
+const IA_BASE = '/api/ia';
 
 // ==================== RESUMIR HISTORIA CLÍNICA ====================
 

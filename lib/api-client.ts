@@ -4,7 +4,9 @@
 import { startLoading, stopLoading } from './loading-manager';
 import { toast } from 'sonner';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+// Las llamadas del navegador pasan por el mismo origen para que Safari no
+// trate las cookies HttpOnly de autenticacion como cookies de terceros.
+const API_BASE = '/api';
 
 // ==================== TYPES ====================
 export interface ApiResponse<T = unknown> {
