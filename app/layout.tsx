@@ -3,6 +3,8 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
 import { LoadingProvider } from '@/components/ui/loading-context';
+import { Toaster } from '@/components/ui/sonner';
+import { SystemStatus } from '@/components/system-status';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -27,6 +29,8 @@ export default function RootLayout({
         >
           <LoadingProvider>
             {children}
+            <SystemStatus />
+            <Toaster position="top-right" richColors closeButton />
           </LoadingProvider>
         </ThemeProvider>
       </body>

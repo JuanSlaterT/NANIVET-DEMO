@@ -13,6 +13,9 @@ import { ClienteRepository, MascotaRepository } from '@/lib/repositories';
 import { formatDate } from '@/lib/constants';
 import { VERSION_AVISO_PRIVACIDAD } from '@/lib/models';
 import type { Cliente, Mascota } from '@/lib/models';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
+
+const EMPTY_CLIENT_FORM = { nombre: '', apellido: '', telefono: '', cedula: '', email: '', direccion: '' };
 
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -21,12 +24,15 @@ export default function ClientesPage() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Cliente | null>(null);
-  const [form, setForm] = useState({ nombre: '', apellido: '', telefono: '', cedula: '', email: '', direccion: '' });
+  const [form, setForm] = useState(EMPTY_CLIENT_FORM);
+  const [initialForm, setInitialForm] = useState(EMPTY_CLIENT_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [deleteTarget, setDeleteTarget] = useState<Cliente | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const formDirty = dialogOpen && JSON.stringify(form) !== JSON.stringify(initialForm);
+  const { requestDiscard, discardDialog } = useUnsavedChanges(formDirty);
 
   const loadData = async () => {
     const [cli, mas] = await Promise.all([
@@ -42,7 +48,7 @@ export default function ClientesPage() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return clientes.filter(c => c.nombre.toLowerCase().includes(q) || c.apellido.toLowerCase().includes(q) || c.cedula.includes(q) || c.telefono.includes(q));
+    return clientes.filter(c => c.nombre.toLowerCase().includes(q) || c.apellido.toLowerCase().includes(q) || (c.cedula || '').includes(q) || c.telefono.includes(q));
   }, [clientes, search]);
 
   const mascotasCountByCliente = useMemo(() => {
@@ -57,17 +63,20 @@ export default function ClientesPage() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ nombre: '', apellido: '', telefono: '', cedula: '', email: '', direccion: '' });
+    setForm(EMPTY_CLIENT_FORM);
+    setInitialForm(EMPTY_CLIENT_FORM);
     setErrors({});
     setDialogOpen(true);
   };
 
   const openEdit = (cli: Cliente) => {
     setEditing(cli);
-    setForm({
-      nombre: cli.nombre, apellido: cli.apellido, telefono: cli.telefono, cedula: cli.cedula,
+    const values = {
+      nombre: cli.nombre, apellido: cli.apellido, telefono: cli.telefono, cedula: cli.cedula || '',
       email: cli.email || '', direccion: cli.direccion || '',
-    });
+    };
+    setForm(values);
+    setInitialForm(values);
     setErrors({});
     setDialogOpen(true);
   };
@@ -77,7 +86,6 @@ export default function ClientesPage() {
     if (!form.nombre.trim()) e.nombre = 'El nombre es obligatorio';
     if (!form.apellido.trim()) e.apellido = 'El apellido es obligatorio';
     if (!form.telefono.trim()) e.telefono = 'El teléfono es obligatorio';
-    if (!form.cedula.trim()) e.cedula = 'La cédula es obligatoria';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -89,7 +97,7 @@ export default function ClientesPage() {
       nombre: form.nombre.trim(),
       apellido: form.apellido.trim(),
       telefono: form.telefono.trim(),
-      cedula: form.cedula.trim(),
+      cedula: form.cedula.trim() || null,
       email: form.email.trim() || null,
       direccion: form.direccion.trim() || null,
     };
@@ -119,7 +127,7 @@ export default function ClientesPage() {
       const targetId = deleteTarget.id;
       const ok = await ClienteRepository.delete(targetId);
       if (!ok) {
-        setDeleteError('No se puede eliminar: el cliente tiene mascotas registradas');
+        setDeleteError('No se pudo eliminar el cliente. Revisa el mensaje del servidor e intenta nuevamente.');
         return;
       }
       setClientes(prev => prev.filter(cliente => cliente.id !== targetId));
@@ -178,7 +186,7 @@ export default function ClientesPage() {
                       <div className="text-xs text-muted-foreground md:hidden">{cli.telefono}</div>
                     </Link>
                   </TableCell>
-                  <TableCell className="hidden md:table-cell font-mono text-sm">{cli.cedula}</TableCell>
+                  <TableCell className="hidden md:table-cell font-mono text-sm">{cli.cedula || 'Sin registrar'}</TableCell>
                   <TableCell className="hidden md:table-cell">{cli.telefono}</TableCell>
                   <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{cli.email || '-'}</TableCell>
                   <TableCell className="text-center">
@@ -209,7 +217,10 @@ export default function ClientesPage() {
       </Card>
 
       {/* Form dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        if (open) setDialogOpen(true);
+        else requestDiscard(() => setDialogOpen(false));
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editing ? 'Editar Cliente' : 'Nuevo Cliente'}</DialogTitle>
@@ -234,9 +245,8 @@ export default function ClientesPage() {
                 {errors.telefono && <p className="text-xs text-destructive">{errors.telefono}</p>}
               </div>
               <div className="space-y-1.5">
-                <Label>Cédula <span className="text-destructive">*</span></Label>
-                <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="0901234567" />
-                {errors.cedula && <p className="text-xs text-destructive">{errors.cedula}</p>}
+                <Label>Cédula (opcional)</Label>
+                <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Se puede registrar después" />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -249,11 +259,13 @@ export default function ClientesPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => requestDiscard(() => setDialogOpen(false))}>Cancelar</Button>
             <Button onClick={handleSave} disabled={saving}>{saving ? 'Guardando...' : editing ? 'Guardar' : 'Crear'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {discardDialog}
 
       {/* Delete dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteError(''); } }}>

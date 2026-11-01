@@ -14,7 +14,7 @@ import { VacunaRepository, MascotaRepository, VeterinarioRepository, CatalogoRep
 import { formatDate } from '@/lib/constants';
 import { useAuth } from '@/components/auth-provider';
 import type { Vacuna, Mascota, Veterinario, CatalogoVacuna } from '@/lib/models';
-import { toast } from 'sonner';
+import { AuditedActionDialog } from '@/components/admin/audited-action-dialog';
 
 export default function VacunasPage() {
   const { user } = useAuth();
@@ -143,10 +143,8 @@ export default function VacunasPage() {
       setForm({ mascotaId: '', vacunaId: '', lote: '', fechaAplicacion: '', veterinarioId: '' });
       setFormErrors({});
       setOpenRegisterDialog(false);
-      toast.success('Vacuna registrada exitosamente');
     } catch (error) {
       console.error('Error al crear vacuna:', error);
-      toast.error('Error al registrar la vacuna');
     } finally {
       setSubmitting(false);
     }
@@ -171,10 +169,8 @@ export default function VacunasPage() {
     try {
       if (editingCatalogId) {
         await CatalogoRepository.updateVacuna(editingCatalogId, catalogForm);
-        toast.success('Vacuna actualizada exitosamente');
       } else {
         await CatalogoRepository.createVacuna(catalogForm);
-        toast.success('Vacuna creada exitosamente');
       }
       const updated = await CatalogoRepository.getAllVacunas();
       setCatalogos(updated);
@@ -182,7 +178,6 @@ export default function VacunasPage() {
       setOpenCatalogDialog(false);
     } catch (error) {
       console.error('Error al guardar catálogo:', error);
-      toast.error('Error al guardar el catálogo');
     }
   };
 
@@ -198,11 +193,8 @@ export default function VacunasPage() {
   };
 
   const handleDeleteCatalog = async (id: string) => {
-    if (confirm('¿Estás seguro de eliminar este tipo de vacuna?')) {
-      await CatalogoRepository.deleteVacuna(id);
-      setCatalogos(prev => prev.filter(v => v.id !== id));
-      toast.success('Tipo de vacuna eliminado');
-    }
+    const deleted = await CatalogoRepository.deleteVacuna(id);
+    if (deleted) setCatalogos(prev => prev.filter(v => v.id !== id));
   };
 
   const resetCatalogForm = () => {
@@ -273,9 +265,16 @@ export default function VacunasPage() {
                           <Button size="sm" variant="ghost" onClick={() => handleEditCatalog(v)}>
                             <Edit2 className="h-4 w-4" />
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDeleteCatalog(v.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <AuditedActionDialog
+                            title="Eliminar tipo de vacuna"
+                            description={`Se eliminará “${v.nombre}” del catálogo.`}
+                            entity="CatalogoVacuna"
+                            entityId={v.id}
+                            confirmLabel="Eliminar"
+                            onConfirm={() => handleDeleteCatalog(v.id)}
+                          >
+                            <Button size="sm" variant="ghost"><Trash2 className="h-4 w-4" /></Button>
+                          </AuditedActionDialog>
                         </div>
                       </div>
                     ))}

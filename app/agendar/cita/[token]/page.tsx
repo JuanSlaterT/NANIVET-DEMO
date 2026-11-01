@@ -12,9 +12,15 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PawPrint, Calendar, Clock, Stethoscope, CheckCircle2, XCircle, CalendarClock, ArrowLeft, AlertTriangle } from 'lucide-react';
-import { CitaRepository, MascotaRepository, ClienteRepository, VeterinarioRepository } from '@/lib/repositories';
+import { CitaRepository } from '@/lib/repositories';
 import { ESTADOS_CITA, TIPOS_SERVICIO, formatDate, formatTime, LIMITE_HORAS_CANCELAR } from '@/lib/constants';
-import type { Cita, Mascota, Cliente, Veterinario } from '@/lib/models';
+import type { Cita, Mascota, Veterinario } from '@/lib/models';
+
+type PublicCita = Cita & {
+  mascotaNombre?: string;
+  mascotaEspecie?: string;
+  veterinarioNombre?: string;
+};
 
 type ViewState = 'loading' | 'found' | 'notfound' | 'confirmed' | 'cancelled' | 'rescheduled' | 'error';
 
@@ -24,7 +30,6 @@ export default function PublicCitaPage() {
 
   const [cita, setCita] = useState<Cita | null>(null);
   const [mascota, setMascota] = useState<Mascota | null>(null);
-  const [cliente, setCliente] = useState<Cliente | null>(null);
   const [vet, setVet] = useState<Veterinario | null>(null);
   const [view, setView] = useState<ViewState>('loading');
   const [errorMsg, setErrorMsg] = useState('');
@@ -47,20 +52,23 @@ export default function PublicCitaPage() {
           return;
         }
 
-        const mascotaPromise = MascotaRepository.getById(c.mascotaId);
-        const vetPromise = VeterinarioRepository.getById(c.veterinarioId);
-        const mas = await mascotaPromise;
-        const clientePromise = mas
-          ? ClienteRepository.getById(mas.clienteId)
-          : Promise.resolve(undefined);
-        const [cli, v] = await Promise.all([clientePromise, vetPromise]);
-
-        if (cancelled) return;
+        const publicCita = c as PublicCita;
+        const mas = {
+          id: c.mascotaId,
+          clienteId: '',
+          nombre: publicCita.mascotaNombre || 'Paciente',
+          especie: publicCita.mascotaEspecie || '',
+          sexo: '',
+          fechaNacimiento: '',
+        } as Mascota;
+        const v = {
+          id: c.veterinarioId,
+          nombre: publicCita.veterinarioNombre || 'Veterinario asignado',
+        } as Veterinario;
 
         const dt = new Date(c.fechaHora);
         setCita(c);
         setMascota(mas || null);
-        setCliente(cli || null);
         setVet(v || null);
         setNuevaFecha(dt.toISOString().split('T')[0]);
         setNuevaHora(`${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`);

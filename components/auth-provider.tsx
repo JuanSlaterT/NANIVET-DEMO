@@ -21,19 +21,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const initializeAuth = () => {
-      try {
-        const storedAuth = api.getStoredAuth();
-        if (storedAuth && storedAuth.user) {
-          setUser(storedAuth.user as UsuarioAuth);
-        }
-      } catch {
-        // ignore
-      }
+    let active = true;
+    const initializeAuth = async () => {
+      const response = await api.getUser();
+      if (!active) return;
+      setUser(response.data ? response.data as UsuarioAuth : null);
       setLoading(false);
     };
 
     initializeAuth();
+    const handleExpired = () => setUser(null);
+    window.addEventListener('nanivet:session-expired', handleExpired);
+    return () => {
+      active = false;
+      window.removeEventListener('nanivet:session-expired', handleExpired);
+    };
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {

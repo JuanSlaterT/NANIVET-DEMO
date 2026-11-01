@@ -13,7 +13,7 @@ interface SearchProps {
 }
 
 interface SearchResults {
-  clientes: Array<{ id: string; nombre: string; apellido: string; cedula: string }>;
+  clientes: Array<{ id: string; nombre: string; apellido: string; cedula: string | null }>;
   mascotas: Array<{ id: string; nombre: string; especie: string; raza?: string | null }>;
   citas: Array<{ id: string; motivo: string; fechaHora: string }>;
   casos: Array<{ id: string; motivo: string; diagnostico: string }>;
@@ -82,7 +82,7 @@ export function GlobalSearch({ open, onOpenChange }: SearchProps) {
                 <CommandItem key={c.id} onSelect={() => navigate(`/admin/clientes/${c.id}`)}>
                   <Users className="mr-2 h-4 w-4" />
                   <span>{c.nombre} {c.apellido}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">CI: {c.cedula}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">CI: {c.cedula || 'Sin registrar'}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

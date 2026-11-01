@@ -14,6 +14,7 @@ import { DesparasitacionRepository, MascotaRepository, VeterinarioRepository, Ca
 import { formatDate } from '@/lib/constants';
 import { useAuth } from '@/components/auth-provider';
 import type { Desparasitacion, Mascota, Veterinario, CatalogoDesparasitacion } from '@/lib/models';
+import { AuditedActionDialog } from '@/components/admin/audited-action-dialog';
 
 export default function DesparasitacionPage() {
   const { user } = useAuth();
@@ -213,10 +214,8 @@ export default function DesparasitacionPage() {
   };
 
   const handleDeleteCatalog = async (id: string) => {
-    if (confirm('¿Estás seguro de eliminar este producto?')) {
-      await CatalogoRepository.deleteDesparasitacion(id);
-      setCatalogos(prev => prev.filter(p => p.id !== id));
-    }
+    const deleted = await CatalogoRepository.deleteDesparasitacion(id);
+    if (deleted) setCatalogos(prev => prev.filter(p => p.id !== id));
   };
 
   const resetCatalogForm = () => {
@@ -275,7 +274,16 @@ export default function DesparasitacionPage() {
                         </div>
                         <div className="flex gap-1">
                           <Button size="sm" variant="ghost" onClick={() => handleEditCatalog(p)}><Edit2 className="h-4 w-4" /></Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDeleteCatalog(p.id)}><Trash2 className="h-4 w-4" /></Button>
+                          <AuditedActionDialog
+                            title="Eliminar producto"
+                            description={`Se eliminará “${p.nombre}” del catálogo de desparasitación.`}
+                            entity="CatalogoDesparasitacion"
+                            entityId={p.id}
+                            confirmLabel="Eliminar"
+                            onConfirm={() => handleDeleteCatalog(p.id)}
+                          >
+                            <Button size="sm" variant="ghost"><Trash2 className="h-4 w-4" /></Button>
+                          </AuditedActionDialog>
                         </div>
                       </div>
                     ))}

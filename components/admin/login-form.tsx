@@ -8,31 +8,41 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { PawPrint, Lock, Mail, AlertCircle } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+const loginSchema = z.object({
+  email: z.string().trim().email('Ingresa un email válido'),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+});
+
+type LoginFormValues = z.infer<typeof loginSchema>;
 
 export function LoginForm() {
   const { login } = useAuth();
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: '', password: '' },
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitLogin = async ({ email, password }: LoginFormValues) => {
     setError('');
-    setLoading(true);
-    const ok = await login(email, password);
-    setLoading(false);
-    if (ok) {
-      router.push('/admin');
-    } else {
-      setError('Email o contraseña incorrectos');
+    try {
+      const ok = await login(email, password);
+      if (ok) {
+        router.push('/admin');
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'No fue posible iniciar sesión');
     }
   };
 
   const quickLogin = (em: string) => {
-    setEmail(em);
-    setPassword('nanivet123');
+    setValue('email', em, { shouldValidate: true });
+    setValue('password', 'nanivet123', { shouldValidate: true });
   };
 
   return (
@@ -52,7 +62,7 @@ export function LoginForm() {
           </div>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit(submitLogin)} className="space-y-4" noValidate>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <div className="relative">
@@ -61,12 +71,11 @@ export function LoginForm() {
                   id="email"
                   type="email"
                   placeholder="usuario@nanivet.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  {...register('email')}
                   className="pl-10"
-                  required
                 />
               </div>
+              {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Contraseña</Label>
@@ -76,12 +85,11 @@ export function LoginForm() {
                   id="password"
                   type="password"
                   placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  {...register('password')}
                   className="pl-10"
-                  required
                 />
               </div>
+              {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
             </div>
             {error && (
               <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
@@ -89,8 +97,8 @@ export function LoginForm() {
                 {error}
               </div>
             )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Ingresando...' : 'Ingresar'}
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? 'Ingresando...' : 'Ingresar'}
             </Button>
           </form>
         </CardContent>

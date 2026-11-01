@@ -14,6 +14,12 @@ import { Clock, Plus, Edit, Trash2, Search, MessageCircle, Calendar as CalIcon, 
 import { CitaRepository, MascotaRepository, VeterinarioRepository, ClienteRepository, HospitalizacionRepository } from '@/lib/repositories';
 import { ESTADOS_CITA, TIPOS_SERVICIO, formatDateTime, formatDate, formatTime, buildWhatsAppUrl } from '@/lib/constants';
 import type { Cita, Mascota, Veterinario, Cliente, Hospitalizacion } from '@/lib/models';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
+
+const EMPTY_CITA_FORM = {
+  mascotaId: '', veterinarioId: '', tipoServicio: 'consulta',
+  fecha: '', hora: '', estado: 'pendiente', motivo: '', notas: '', peso: '',
+};
 
 // Helper function to generate time slots based on veterinarian's horario
 const generateTimeSlots = (horario: { inicio: string; fin: string; intervalo: number }): string[] => {
@@ -53,15 +59,15 @@ export default function CitasPage() {
   const [deleteTarget, setDeleteTarget] = useState<Cita | null>(null);
   const [whatsappTarget, setWhatsappTarget] = useState<Cita | null>(null);
 
-  const [form, setForm] = useState({
-    mascotaId: '', veterinarioId: '', tipoServicio: 'consulta',
-    fecha: '', hora: '', estado: 'pendiente', motivo: '', notas: '', peso: '',
-  });
+  const [form, setForm] = useState(EMPTY_CITA_FORM);
+  const [initialForm, setInitialForm] = useState(EMPTY_CITA_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPeso, setShowPeso] = useState(false);
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const formDirty = dialogOpen && JSON.stringify(form) !== JSON.stringify(initialForm);
+  const { requestDiscard, discardDialog } = useUnsavedChanges(formDirty);
 
   const loadData = async () => {
     const [c, mas, v, cli, hosps] = await Promise.all([
@@ -113,7 +119,9 @@ export default function CitasPage() {
     const fechaManana = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
     const defaultVet = vets[0] || null;
     const defaultHora = defaultVet ? defaultVet.horario.inicio : '09:00';
-    setForm({ mascotaId: '', veterinarioId: defaultVet?.id || '', tipoServicio: 'consulta', fecha: fechaManana, hora: defaultHora, estado: 'pendiente', motivo: '', notas: '', peso: '' });
+    const values = { mascotaId: '', veterinarioId: defaultVet?.id || '', tipoServicio: 'consulta', fecha: fechaManana, hora: defaultHora, estado: 'pendiente', motivo: '', notas: '', peso: '' };
+    setForm(values);
+    setInitialForm(values);
     setTimeSlots(defaultVet ? generateTimeSlots(defaultVet.horario) : []);
     setErrors({});
     setDialogOpen(true);
@@ -128,11 +136,13 @@ export default function CitasPage() {
       slots = [...slots, existingHora];
     }
     setEditing(cita);
-    setForm({
+    const values = {
       mascotaId: cita.mascotaId, veterinarioId: cita.veterinarioId, tipoServicio: cita.tipoServicio,
       fecha: cita.fechaHora.slice(0, 10), hora: existingHora,
       estado: cita.estado, motivo: cita.motivo, notas: cita.notas, peso: cita.pesoCita?.toString() || '',
-    });
+    };
+    setForm(values);
+    setInitialForm(values);
     setTimeSlots(slots);
     setErrors({});
     setDialogOpen(true);
@@ -317,7 +327,10 @@ export default function CitasPage() {
       </Card>
 
       {/* Form dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        if (open) setDialogOpen(true);
+        else requestDiscard(() => setDialogOpen(false));
+      }}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? 'Editar Cita' : 'Nueva Cita'}</DialogTitle></DialogHeader>
           <div className="space-y-4">
@@ -397,11 +410,13 @@ export default function CitasPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => requestDiscard(() => setDialogOpen(false))}>Cancelar</Button>
             <Button onClick={handleSave} disabled={saving}>{saving ? 'Guardando...' : editing ? 'Guardar' : 'Crear'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {discardDialog}
 
       {/* Delete dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>

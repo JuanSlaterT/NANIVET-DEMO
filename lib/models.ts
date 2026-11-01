@@ -48,7 +48,7 @@ export interface Cliente {
   nombre: string;
   apellido: string;
   telefono: string;
-  cedula: string;
+  cedula: string | null;
   email: string | null;
   direccion: string | null;
   consentimientoDatos: {

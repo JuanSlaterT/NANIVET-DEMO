@@ -1,21 +1,29 @@
 // API Client - Conexión frontend al backend NANIVET
-// Transforma camelCase (frontend) a snake_case (backend) y maneja autenticación JWT
+// Transforma camelCase (frontend) a snake_case (backend) y usa sesión HttpOnly.
 
 import { startLoading, stopLoading } from './loading-manager';
+import { toast } from 'sonner';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
 // ==================== TYPES ====================
 export interface ApiResponse<T = unknown> {
   data?: T;
-  error?: { code: string; message: string };
+  error?: ApiError;
   meta?: Record<string, unknown>;
 }
 
 export interface ApiError {
   code: string;
   message: string;
+  details?: Array<{ field?: string; message: string }>;
+  requestId?: string;
 }
+
+type ParsedResponseBody = {
+  value: any;
+  rawText: string;
+};
 
 // ==================== AUTH ====================
 export interface LoginCredentials {
@@ -24,21 +32,6 @@ export interface LoginCredentials {
 }
 
 export interface AuthResponse {
-  token: string;
-  refreshToken: string;
-  user: {
-    id: string;
-    nombre: string;
-    email: string;
-    rol: string;
-    veterinario_id?: string | null;
-  };
-}
-
-/** Stored auth object in localStorage */
-export interface StoredAuth {
-  token: string;
-  refreshToken: string;
   user: {
     id: string;
     nombre: string;
@@ -83,54 +76,6 @@ function toCamelCase(obj: Record<string, unknown> | Record<string, unknown>[]): 
   return result;
 }
 
-// ==================== AUTH STORAGE ====================
-const AUTH_STORAGE_KEY = 'nanivet_auth';
-
-/** Get stored auth object (token + refreshToken + user) */
-function getStoredAuth(): StoredAuth | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (parsed.token && parsed.refreshToken) {
-        return parsed as StoredAuth;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-/** Get only the access token */
-function getAuthToken(): string | null {
-  const auth = getStoredAuth();
-  return auth?.token || null;
-}
-
-/** Get only the refresh token */
-function getRefreshToken(): string | null {
-  const auth = getStoredAuth();
-  return auth?.refreshToken || null;
-}
-
-/** Store complete auth object */
-function storeAuth(auth: StoredAuth): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
-  } catch (error) {
-    console.error('Error storing auth:', error);
-  }
-}
-
-/** Clear stored auth */
-function clearAuth(): void {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(AUTH_STORAGE_KEY);
-}
-
 // ==================== TOKEN REFRESH ====================
 let isRefreshing = false;
 let failedQueue: Array<{
@@ -152,44 +97,28 @@ function processQueue(error: Error | null, token: string | null = null): void {
 
 /** Refresh the access token using the refresh token */
 async function refreshAccessToken(): Promise<string> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    throw new Error('No refresh token available');
-  }
-
   try {
     const response = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ refreshToken }),
+      credentials: 'include',
     });
 
-    const data = await response.json();
+    const parsed = await parseResponseBody(response);
+    const data = parsed.value;
 
     if (!response.ok || data.error) {
-      throw new Error(data.error?.message || 'Refresh failed');
+      throw new Error(extractError(data, parsed.rawText, response.status).message);
     }
 
-    const newToken = data.data?.token;
-    if (!newToken) {
-      throw new Error('No new token in response');
+    if (!data.data?.user) {
+      throw new Error('El servidor no devolvió una sesión renovada');
     }
-
-    // Update stored auth with new token (keep same refreshToken)
-    const stored = getStoredAuth();
-    if (stored) {
-      storeAuth({
-        ...stored,
-        token: newToken,
-      });
-    }
-
-    return newToken;
+    return 'cookie-session';
   } catch (error) {
     // Clear auth on refresh failure
-    clearAuth();
     throw error;
   }
 }
@@ -262,30 +191,201 @@ function pruneExpiredGetCache(now: number): void {
   nextCachePruneAt = now + GET_CACHE_TTL_MS;
 }
 
-/** Parse JSON when present while allowing successful 204/empty responses. */
-async function parseResponseBody(response: Response): Promise<any> {
+/** Parse JSON when present while preserving useful non-JSON backend messages. */
+async function parseResponseBody(response: Response): Promise<ParsedResponseBody> {
   const text = await response.text();
-  if (!text.trim()) return {};
+  if (!text.trim()) return { value: {}, rawText: '' };
 
   try {
-    return JSON.parse(text);
+    return { value: JSON.parse(text), rawText: text };
   } catch {
-    return {};
+    return { value: {}, rawText: text };
   }
+}
+
+function asUsefulMessage(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const message = value.trim();
+  if (!message || /<\/?[a-z][\s\S]*>/i.test(message)) return null;
+  return message.slice(0, 500);
+}
+
+/** Supports the documented { error: { code, message } } contract and common exception shapes. */
+function extractError(body: any, rawText: string, status: number): ApiError {
+  const errorObject = body?.error;
+  const collections = [body?.errors, errorObject?.errors, body?.issues, errorObject?.issues, errorObject?.details]
+    .filter(Array.isArray)
+    .flat();
+  const detailMessages = collections
+    .map((item: any) => {
+      const detail = asUsefulMessage(item?.message ?? item?.msg ?? item);
+      const field = asUsefulMessage(item?.field);
+      return detail && field ? `${field}: ${detail}` : detail;
+    })
+    .filter((message: string | null): message is string => Boolean(message));
+  const message =
+    (detailMessages.length > 0 ? detailMessages.join('. ') : null) ||
+    asUsefulMessage(errorObject?.message) ||
+    asUsefulMessage(errorObject) ||
+    asUsefulMessage(body?.message) ||
+    asUsefulMessage(rawText) ||
+    ({
+      400: 'La solicitud contiene datos inválidos.',
+      401: 'No fue posible validar tu sesión.',
+      403: 'No tienes permisos para realizar esta acción.',
+      404: 'No se encontró el recurso solicitado.',
+      409: 'La operación entra en conflicto con información existente.',
+      413: 'El contenido enviado supera el tamaño permitido.',
+      422: 'No fue posible validar la información enviada.',
+      429: 'Se realizaron demasiadas solicitudes. Intenta nuevamente en unos minutos.',
+      500: 'El servidor encontró un problema inesperado.',
+      502: 'El servicio no está disponible temporalmente.',
+      503: 'El servicio no está disponible temporalmente.',
+      504: 'El servidor tardó demasiado en responder.',
+    } as Record<number, string>)[status] ||
+    `La petición falló (HTTP ${status}).`;
+
+  return {
+    code: asUsefulMessage(errorObject?.code) || asUsefulMessage(body?.code) || `HTTP_${status}`,
+    message,
+    details: Array.isArray(errorObject?.details) ? errorObject.details : undefined,
+    requestId: asUsefulMessage(errorObject?.requestId) || undefined,
+  };
+}
+
+function requestPath(url: string): string {
+  try {
+    return new URL(url, API_BASE).pathname;
+  } catch {
+    return url;
+  }
+}
+
+function requestContext(method: string, url: string): string {
+  const path = requestPath(url);
+  if (/\/confirmar$/.test(path)) return 'confirmar la cita';
+  if (/\/cancelar$/.test(path)) return 'cancelar la cita';
+  if (/\/reprogramar$/.test(path)) return 'reprogramar la cita';
+  if (/\/revocar-consentimiento$/.test(path)) return 'revocar el consentimiento';
+  if (/\/alta$/.test(path)) return 'registrar el alta';
+  if (/\/administrar$/.test(path)) return 'registrar la toma';
+  if (/\/responder$/.test(path)) return 'enviar la respuesta';
+  if (path.endsWith('/auth/login')) return 'iniciar sesión';
+  if (path.includes('/ia/resumir-historia')) return 'generar el resumen clínico';
+  if (path.includes('/ia/notas-a-soap')) return 'convertir las notas a SOAP';
+  if (path.includes('/ia/redactar-mensaje')) return 'redactar el mensaje';
+  if (path.includes('/ia/diferenciales')) return 'generar los diagnósticos diferenciales';
+
+  const resourceKey = path.split('/').filter(Boolean).find(segment => segment !== 'api') || 'datos';
+  const resources: Record<string, { singular: string; plural: string }> = {
+    veterinarios: { singular: 'bloqueo de horario', plural: 'veterinarios y horarios' },
+    staff: { singular: 'miembro del personal', plural: 'personal' },
+    clientes: { singular: 'cliente', plural: 'clientes' },
+    mascotas: { singular: 'paciente', plural: 'pacientes' },
+    citas: { singular: 'cita', plural: 'citas' },
+    casos: { singular: 'caso clínico', plural: 'casos clínicos' },
+    vacunas: { singular: 'vacuna', plural: 'vacunas' },
+    tratamientos: { singular: 'tratamiento', plural: 'tratamientos' },
+    desparasitaciones: { singular: 'desparasitación', plural: 'desparasitaciones' },
+    cirugias: { singular: 'cirugía', plural: 'cirugías' },
+    examenes: { singular: 'examen', plural: 'exámenes' },
+    hospitalizaciones: { singular: 'hospitalización', plural: 'hospitalizaciones' },
+    medicaciones: { singular: 'medicación', plural: 'medicaciones' },
+    plantillas: { singular: 'plantilla', plural: 'plantillas' },
+    puntuaciones: { singular: 'puntuación', plural: 'puntuaciones' },
+    'catalogo-vacunas': { singular: 'tipo de vacuna', plural: 'catálogo de vacunas' },
+    'catalogo-desparasitacion': { singular: 'producto de desparasitación', plural: 'catálogo de desparasitación' },
+  };
+  const resource = resources[resourceKey] || { singular: 'registro', plural: 'datos solicitados' };
+  if (method === 'GET') return `cargar ${resource.plural}`;
+  if (method === 'DELETE') return `eliminar el ${resource.singular}`;
+  if (method === 'PUT' || method === 'PATCH') return `actualizar el ${resource.singular}`;
+  return `guardar el ${resource.singular}`;
+}
+
+function successMessage(method: string, url: string, body: any): string {
+  const backendMessage = asUsefulMessage(body?.data?.message) || asUsefulMessage(body?.message);
+  if (backendMessage) return backendMessage;
+
+  const path = requestPath(url);
+  if (/\/confirmar$/.test(path)) return 'Cita confirmada correctamente.';
+  if (/\/cancelar$/.test(path)) return 'Cita cancelada correctamente.';
+  if (/\/reprogramar$/.test(path)) return 'Cita reprogramada correctamente.';
+  if (/\/revocar-consentimiento$/.test(path)) return 'Consentimiento revocado correctamente.';
+  if (/\/alta$/.test(path)) return 'Alta registrada correctamente.';
+  if (/\/administrar$/.test(path)) return 'Toma registrada correctamente.';
+  if (/\/responder$/.test(path)) return 'Respuesta enviada correctamente.';
+  if (path.endsWith('/auth/login')) return 'Sesión iniciada correctamente.';
+  const context = requestContext(method, url);
+  return `${context.charAt(0).toUpperCase()}${context.slice(1)}: operación completada correctamente.`;
+}
+
+function showApiError(error: ApiError, method: string, url: string, status?: number): void {
+  if (typeof window === 'undefined') return;
+  // A 404 is often used as an existence check by repositories. Detail pages
+  // already render their own not-found state, so avoid a duplicate toast.
+  if (method === 'GET' && status === 404) return;
+  const context = requestContext(method, url);
+  const code = error.code && !error.code.startsWith('HTTP_') ? ` Código: ${error.code}.` : '';
+  const reference = error.requestId ? ` Referencia: ${error.requestId}.` : '';
+  toast.error(error.message, {
+    id: `api-error:${method}:${requestPath(url)}:${error.code}:${error.message}`,
+    description: `No se pudo ${context}.${code}${reference}`,
+    duration: 7000,
+  });
+  window.dispatchEvent(new CustomEvent('nanivet:api-error', {
+    detail: { error, method, path: requestPath(url), context, status },
+  }));
+}
+
+function showApiSuccess(method: string, url: string, body: any): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('nanivet:api-success'));
+  }
+  if (typeof window === 'undefined' || ['GET', 'HEAD', 'OPTIONS'].includes(method)) return;
+  toast.success(successMessage(method, url, body), {
+    id: `api-success:${method}:${requestPath(url)}`,
+  });
 }
 
 function buildHeaders(headersInit: HeadersInit | undefined, token: string | null): Headers {
   const headers = new Headers(headersInit);
+  headers.delete('X-Nanivet-Suppress-Feedback');
 
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  if (token) {
+  if (token && token !== 'cookie-session') {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
   return headers;
+}
+
+async function fetchWithRetry(url: string, options: RequestInit, method: string): Promise<Response> {
+  const attempts = method === 'GET' ? 3 : 1;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, options);
+      const retryable = response.status === 429 || response.status >= 500;
+      if (!retryable || attempt === attempts - 1) return response;
+
+      const retryAfter = Number(response.headers.get('Retry-After'));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 5000)
+        : 350 * (2 ** attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1 || (error instanceof DOMException && error.name === 'AbortError')) throw error;
+      await new Promise(resolve => setTimeout(resolve, 350 * (2 ** attempt)));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('No fue posible completar la solicitud');
 }
 
 /** Execute one API request with auth, refresh/retry and response transformation. */
@@ -295,7 +395,9 @@ async function executeFetchApi<T>(
   token: string | null,
   isMutation: boolean,
 ): Promise<ApiResponse<T>> {
+  const suppressFeedback = new Headers(options.headers).get('X-Nanivet-Suppress-Feedback') === 'true';
   const headers = buildHeaders(options.headers, token);
+  const method = (options.method || 'GET').toUpperCase();
   let loadingTimer: ReturnType<typeof setTimeout> | null = null;
   let loadingStarted = false;
 
@@ -309,15 +411,17 @@ async function executeFetchApi<T>(
   }
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       ...options,
       headers,
-    });
+      credentials: options.credentials || 'include',
+    }, method);
 
-    const data = await parseResponseBody(response);
+    const parsed = await parseResponseBody(response);
+    const data = parsed.value;
 
     // Handle token expiration: try automatic refresh
-    if (response.status === 401 && (data.error?.code === 'TOKEN_EXPIRED' || data.error?.code === 'UNAUTHORIZED')) {
+    if (response.status === 401 && ['TOKEN_EXPIRED', 'INVALID_TOKEN', 'UNAUTHORIZED'].includes(data.error?.code)) {
       const newToken = await handleTokenExpired();
       
       if (newToken) {
@@ -327,63 +431,70 @@ async function executeFetchApi<T>(
         const retryResponse = await fetch(url, {
           ...options,
           headers: retryHeaders,
+          credentials: options.credentials || 'include',
         });
 
-        const retryData = await parseResponseBody(retryResponse);
+        const retryParsed = await parseResponseBody(retryResponse);
+        const retryData = retryParsed.value;
 
         if (!retryResponse.ok) {
-          return {
-            error: {
-              code: retryData.error?.code || `HTTP_${retryResponse.status}`,
-              message: retryData.error?.message || `Error ${retryResponse.status}`,
-            },
-          };
+          const error = extractError(retryData, retryParsed.rawText, retryResponse.status);
+          if (!suppressFeedback) showApiError(error, method, url, retryResponse.status);
+          return { error };
         }
 
         if (retryData.data) {
+          if (!suppressFeedback) showApiSuccess(method, url, retryData);
           return {
             data: toCamelCase(retryData.data) as T,
             meta: retryData.meta,
           };
         }
 
+        if (!suppressFeedback) showApiSuccess(method, url, retryData);
         return retryData as ApiResponse<T>;
       } else {
         // Refresh failed, clear auth and return unauthorized
-        return {
-          error: {
-            code: 'SESSION_EXPIRED',
-            message: 'Sesión expirada. Por favor, inicia sesión nuevamente.',
-          },
+        const error = {
+          code: 'SESSION_EXPIRED',
+          message: 'Sesión expirada. Por favor, inicia sesión nuevamente.',
         };
+        if (!suppressFeedback) showApiError(error, method, url, 401);
+        if (!suppressFeedback && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('nanivet:session-expired'));
+        }
+        return { error };
       }
     }
 
     if (!response.ok) {
-      return {
-        error: {
-          code: data.error?.code || `HTTP_${response.status}`,
-          message: data.error?.message || `Error ${response.status}`,
-        },
-      };
+      const error = extractError(data, parsed.rawText, response.status);
+      if (!suppressFeedback) showApiError(error, method, url, response.status);
+      return { error };
     }
 
     // Transform snake_case to camelCase if we have data
     if (data.data) {
+      if (!suppressFeedback) showApiSuccess(method, url, data);
       return {
         data: toCamelCase(data.data) as T,
         meta: data.meta,
       };
     }
 
+    if (!suppressFeedback) showApiSuccess(method, url, data);
     return data as ApiResponse<T>;
   } catch (error) {
-    return {
-      error: {
-        code: 'NETWORK_ERROR',
-        message: error instanceof Error ? error.message : 'Error de red',
-      },
-    };
+    const requestError: ApiError = error instanceof DOMException && error.name === 'AbortError'
+      ? { code: 'REQUEST_ABORTED', message: 'La solicitud fue cancelada.' }
+      : {
+          code: 'NETWORK_ERROR',
+          message: 'No se pudo conectar con el servidor. Comprueba tu conexión e intenta nuevamente.',
+        };
+    if (requestError.code !== 'REQUEST_ABORTED') {
+      if (!suppressFeedback) showApiError(requestError, method, url);
+    }
+    return { error: requestError };
   } finally {
     if (loadingTimer) {
       clearTimeout(loadingTimer);
@@ -405,7 +516,7 @@ export function fetchApi<T>(
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   const method = (options.method || 'GET').toUpperCase();
-  const token = getAuthToken();
+  const token = null;
   const isGet = method === 'GET';
   const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
 
@@ -475,43 +586,23 @@ export function fetchApi<T>(
 export const api = {
   // ===== AUTH =====
   async login(credentials: LoginCredentials): Promise<ApiResponse<AuthResponse>> {
-    const response = await fetch(`${API_BASE}/auth/login`, {
+    const response = await fetchApi<AuthResponse>(`${API_BASE}/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials),
     });
 
-    const data = await response.json();
-
-    if (response.ok && data.data) {
-      // Store both token and refreshToken in localStorage
-      storeAuth({
-        token: data.data.token,
-        refreshToken: data.data.refreshToken,
-        user: data.data.user,
-      });
-      return {
-        data: data.data as AuthResponse,
-      };
-    }
-
-    return {
-      error: data.error || { code: 'LOGIN_ERROR', message: 'Error al iniciar sesión' },
-    };
+    return response;
   },
 
-  /** Logout and clear all stored auth */
+  /** Logout clears the HttpOnly cookies on the backend. */
   async logout(): Promise<void> {
-    clearAuth();
-  },
-
-  /** Get current stored auth object */
-  getStoredAuth(): StoredAuth | null {
-    return getStoredAuth();
+    await fetchApi(`${API_BASE}/auth/logout`, { method: 'POST' });
   },
 
   async getUser(): Promise<ApiResponse<UserResponse>> {
-    return fetchApi(`${API_BASE}/auth/me`);
+    return fetchApi(`${API_BASE}/auth/me`, {
+      headers: { 'X-Nanivet-Suppress-Feedback': 'true' },
+    });
   },
 
   // ===== VETERINARIOS =====
@@ -740,9 +831,10 @@ export const api = {
     });
   },
 
-  async updateCaso(id: string, data: Record<string, unknown>): Promise<ApiResponse<unknown>> {
+  async updateCaso(id: string, data: Record<string, unknown>, suppressFeedback = false): Promise<ApiResponse<unknown>> {
     return fetchApi(`${API_BASE}/casos/${id}`, {
       method: 'PUT',
+      headers: suppressFeedback ? { 'X-Nanivet-Suppress-Feedback': 'true' } : undefined,
       body: JSON.stringify(toSnakeCase(data)),
     });
   },

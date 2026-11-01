@@ -12,12 +12,14 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
-import { ArrowLeft, ClipboardList, Syringe, Pill, Scissors, FileText, Save, PawPrint, Sparkles, Brain, Plus, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Syringe, Pill, Scissors, FileText, Save, PawPrint, Sparkles, Brain, Plus, Edit, Trash2, CheckCircle2, CloudUpload, AlertCircle } from 'lucide-react';
 import { CasoRepository, MascotaRepository, VeterinarioRepository, VacunaRepository, TratamientoRepository, DesparasitacionRepository, CirugiaRepository, ExamenRepository, AuditRepository } from '@/lib/repositories';
 import { ESTADOS_CASO, formatDate } from '@/lib/constants';
 import type { CasoClinico, Mascota, Veterinario, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, AuditLog } from '@/lib/models';
 import { useAuth } from '@/components/auth-provider';
 import { convertirNotasASoap, obtenerDiferenciales } from '@/lib/ia-service';
+import { AuditedActionDialog } from '@/components/admin/audited-action-dialog';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 export default function CasoDetailPage() {
   const params = useParams();
@@ -39,6 +41,11 @@ export default function CasoDetailPage() {
   const [aiDifferentials, setAiDifferentials] = useState<{ diagnostico: string; probabilidad: string; descripcion: string; examenes: string[] }[]>([]);
   const [aiDiffLoading, setAiDiffLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle');
+  const soapDirty = Boolean(caso) && (
+    JSON.stringify(soap) !== JSON.stringify(caso?.soap) || nuevoEstado !== caso?.estado
+  );
+  const { requestDiscard: requestSoapDiscard, discardDialog: soapDiscardDialog } = useUnsavedChanges(editing && soapDirty);
 
   // Tratamiento CRUD state
   const [tratamientoDialogOpen, setTratamientoDialogOpen] = useState(false);
@@ -46,6 +53,10 @@ export default function CasoDetailPage() {
   const [tratamientoForm, setTratamientoForm] = useState({
     nombre: '', dosis: '', duracion: '', fecha: new Date().toISOString().split('T')[0], veterinarioId: 'vet_001',
   });
+  const [tratamientoInitial, setTratamientoInitial] = useState(tratamientoForm);
+  const [tratamientoHistory, setTratamientoHistory] = useState<AuditLog[]>([]);
+  const tratamientoDirty = JSON.stringify(tratamientoForm) !== JSON.stringify(tratamientoInitial);
+  const { requestDiscard: requestTratamientoDiscard, discardDialog: tratamientoDiscardDialog } = useUnsavedChanges(tratamientoDialogOpen && tratamientoDirty);
 
   // Estado local para evitar re-renders infinitos por params/router
   const [casoId, setCasoId] = useState<string | null>(null);
@@ -89,25 +100,53 @@ export default function CasoDetailPage() {
     };
   }, [casoId, router]);
 
+  useEffect(() => {
+    if (!editing || !caso || !soapDirty) return;
+    setAutoSaveStatus('pending');
+    const timer = window.setTimeout(async () => {
+      setAutoSaveStatus('saving');
+      const updated = await CasoRepository.update(
+        caso.id,
+        { soap, estado: nuevoEstado as CasoClinico['estado'] },
+        { silent: true },
+      );
+      if (updated) {
+        setCaso(updated);
+        setAutoSaveStatus('saved');
+      } else {
+        setAutoSaveStatus('error');
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [editing, caso, soap, nuevoEstado, soapDirty]);
+
   const saveSoap = async () => {
     if (!caso) return;
     const updated = await CasoRepository.update(caso.id, { soap, estado: nuevoEstado as CasoClinico['estado'] });
     if (updated) {
       setCaso(updated);
       setEditing(false);
+      setAutoSaveStatus('saved');
     }
   };
 
   // ==================== TRATAMIENTO CRUD ====================
   const openNewTratamiento = () => {
     setEditingTratamiento(null);
-    setTratamientoForm({ nombre: '', dosis: '', duracion: '', fecha: new Date().toISOString().split('T')[0], veterinarioId: caso?.veterinarioId || 'vet_001' });
+    const initial = { nombre: '', dosis: '', duracion: '', fecha: new Date().toISOString().split('T')[0], veterinarioId: caso?.veterinarioId || 'vet_001' };
+    setTratamientoForm(initial);
+    setTratamientoInitial(initial);
+    setTratamientoHistory([]);
     setTratamientoDialogOpen(true);
   };
 
   const openEditTratamiento = (t: Tratamiento) => {
     setEditingTratamiento(t);
-    setTratamientoForm({ nombre: t.nombre, dosis: t.dosis, duracion: t.duracion, fecha: t.fecha, veterinarioId: t.veterinarioId });
+    const initial = { nombre: t.nombre, dosis: t.dosis, duracion: t.duracion, fecha: t.fecha, veterinarioId: t.veterinarioId };
+    setTratamientoForm(initial);
+    setTratamientoInitial(initial);
+    setTratamientoHistory([]);
+    void AuditRepository.getByEntidad('Tratamiento', t.id).then(records => setTratamientoHistory(records.slice(0, 5)));
     setTratamientoDialogOpen(true);
   };
 
@@ -176,7 +215,11 @@ export default function CasoDetailPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-start gap-3">
-        <Link href="/admin/casos"><Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button></Link>
+        <Link href="/admin/casos" onClick={(event) => {
+          if (!editing || !soapDirty) return;
+          event.preventDefault();
+          requestSoapDiscard(() => router.push('/admin/casos'));
+        }}><Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button></Link>
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight">{caso.motivo}</h1>
@@ -205,17 +248,39 @@ export default function CasoDetailPage() {
         <TabsContent value="soap">
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-base">Nota SOAP</CardTitle>
+              <div>
+                <CardTitle className="text-base">Nota SOAP</CardTitle>
+                {editing && (
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    {autoSaveStatus === 'saving' && <><CloudUpload className="h-3.5 w-3.5 animate-pulse" /> Guardando automáticamente...</>}
+                    {autoSaveStatus === 'pending' && <>Cambios pendientes...</>}
+                    {autoSaveStatus === 'saved' && <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> Cambios guardados</>}
+                    {autoSaveStatus === 'error' && <><AlertCircle className="h-3.5 w-3.5 text-destructive" /> No se pudo autoguardar</>}
+                  </p>
+                )}
+              </div>
               {!editing ? (
                 <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Editar</Button>
               ) : (
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => { setSoap(caso.soap); setNuevoEstado(caso.estado); setEditing(false); }}>Cancelar</Button>
+                  <Button variant="outline" size="sm" onClick={() => requestSoapDiscard(() => { setSoap(caso.soap); setNuevoEstado(caso.estado); setEditing(false); setAutoSaveStatus('idle'); })}>Cancelar</Button>
                   <Button size="sm" onClick={saveSoap} className="gap-1"><Save className="h-3 w-3" /> Guardar</Button>
                 </div>
               )}
             </CardHeader>
             <CardContent className="space-y-4">
+              {editing && auditLogs.length > 0 && (
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="mb-2 flex items-center gap-2 text-xs font-medium"><ClipboardList className="h-3.5 w-3.5" /> Cambios clínicos recientes</p>
+                  <div className="space-y-1.5">
+                    {auditLogs.slice(0, 3).map(log => (
+                      <p key={log.id} className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{log.usuario}</span> · {log.accion} · {formatDate(log.fechaHora)}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
               {editing && (
                 <div className="space-y-1.5">
                   <Label>Estado del caso</Label>
@@ -250,7 +315,10 @@ export default function CasoDetailPage() {
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="text-base">Tratamientos / Recetas</CardTitle>
-              <Dialog open={tratamientoDialogOpen} onOpenChange={setTratamientoDialogOpen}>
+              <Dialog open={tratamientoDialogOpen} onOpenChange={(nextOpen) => {
+                if (nextOpen) setTratamientoDialogOpen(true);
+                else requestTratamientoDiscard(() => setTratamientoDialogOpen(false));
+              }}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="gap-1.5" onClick={openNewTratamiento}><Plus className="h-3.5 w-3.5" /> Nuevo</Button>
                 </DialogTrigger>
@@ -258,6 +326,16 @@ export default function CasoDetailPage() {
                   <DialogHeader>
                     <DialogTitle>{editingTratamiento ? 'Editar Tratamiento' : 'Nuevo Tratamiento'}</DialogTitle>
                   </DialogHeader>
+                  {editingTratamiento && (
+                    <div className="rounded-md border bg-muted/20 p-3">
+                      <p className="mb-2 flex items-center gap-2 text-xs font-medium"><ClipboardList className="h-3.5 w-3.5" /> Historial antes de modificar</p>
+                      {tratamientoHistory.length > 0 ? tratamientoHistory.map(log => (
+                        <p key={log.id} className="text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">{log.usuario}</span> · {log.accion} · {formatDate(log.fechaHora)}
+                        </p>
+                      )) : <p className="text-xs text-muted-foreground">No hay cambios anteriores registrados.</p>}
+                    </div>
+                  )}
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
@@ -290,7 +368,7 @@ export default function CasoDetailPage() {
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button variant="outline" onClick={() => setTratamientoDialogOpen(false)}>Cancelar</Button>
+                    <Button variant="outline" onClick={() => requestTratamientoDiscard(() => setTratamientoDialogOpen(false))}>Cancelar</Button>
                     <Button onClick={handleSaveTratamiento} disabled={!tratamientoForm.nombre.trim() || !tratamientoForm.dosis.trim()}>
                       {editingTratamiento ? 'Guardar cambios' : 'Crear tratamiento'}
                     </Button>
@@ -312,9 +390,16 @@ export default function CasoDetailPage() {
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditTratamiento(t)}>
                         <Edit className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { if (confirm('¿Eliminar este tratamiento?')) handleDeleteTratamiento(t.id); }}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <AuditedActionDialog
+                        title="Eliminar tratamiento"
+                        description={`Se eliminará “${t.nombre}” de la historia clínica.`}
+                        entity="Tratamiento"
+                        entityId={t.id}
+                        confirmLabel="Eliminar"
+                        onConfirm={() => handleDeleteTratamiento(t.id)}
+                      >
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+                      </AuditedActionDialog>
                     </div>
                   </div>
                 ))}
@@ -460,6 +545,8 @@ export default function CasoDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+      {soapDiscardDialog}
+      {tratamientoDiscardDialog}
     </div>
   );
 }

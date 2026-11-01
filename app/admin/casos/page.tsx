@@ -12,7 +12,6 @@ import { ClipboardList, Search, Plus, Trash2, AlertTriangle } from 'lucide-react
 import { CasoRepository, MascotaRepository } from '@/lib/repositories';
 import { ESTADOS_CASO, formatDate } from '@/lib/constants';
 import { useAuth } from '@/components/auth-provider';
-import { toast } from 'sonner';
 import type { CasoClinico, Mascota } from '@/lib/models';
 
 export default function CasosPage() {
@@ -45,9 +44,6 @@ export default function CasosPage() {
     setDeleting(false);
     if (ok) {
       setCasos(prev => prev.filter(c => c.id !== deleteTarget.id));
-      toast.success('Caso clínico eliminado');
-    } else {
-      toast.error('No se pudo eliminar el caso');
     }
     setDeleteTarget(null);
   };

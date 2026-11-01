@@ -13,6 +13,13 @@ import { PawPrint, Search, Plus, Edit, Trash2, Eye, AlertTriangle } from 'lucide
 import { MascotaRepository, ClienteRepository } from '@/lib/repositories';
 import { ESPECIES, SEXOS, formatDate } from '@/lib/constants';
 import type { Mascota, Cliente } from '@/lib/models';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
+
+const EMPTY_MASCOTA_FORM = {
+  clienteId: '', nombre: '', especie: 'Perro', sexo: 'Macho',
+  fechaNacimiento: '', raza: '', color: '', esterilizado: false,
+  alergias: '', microchip: '', notas: '',
+};
 
 export default function MascotasPage() {
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
@@ -26,12 +33,11 @@ export default function MascotasPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [form, setForm] = useState({
-    clienteId: '', nombre: '', especie: 'Perro', sexo: 'Macho',
-    fechaNacimiento: '', raza: '', color: '', esterilizado: false,
-    alergias: '', microchip: '', notas: '',
-  });
+  const [form, setForm] = useState(EMPTY_MASCOTA_FORM);
+  const [initialForm, setInitialForm] = useState(EMPTY_MASCOTA_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const formDirty = dialogOpen && JSON.stringify(form) !== JSON.stringify(initialForm);
+  const { requestDiscard, discardDialog } = useUnsavedChanges(formDirty);
 
   const loadData = async () => {
     const [mas, cli] = await Promise.all([MascotaRepository.getAll(), ClienteRepository.getAll()]);
@@ -55,19 +61,22 @@ export default function MascotasPage() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ clienteId: '', nombre: '', especie: 'Perro', sexo: 'Macho', fechaNacimiento: '', raza: '', color: '', esterilizado: false, alergias: '', microchip: '', notas: '' });
+    setForm(EMPTY_MASCOTA_FORM);
+    setInitialForm(EMPTY_MASCOTA_FORM);
     setErrors({});
     setDialogOpen(true);
   };
 
   const openEdit = (mas: Mascota) => {
     setEditing(mas);
-    setForm({
+    const values = {
       clienteId: mas.clienteId, nombre: mas.nombre, especie: mas.especie, sexo: mas.sexo,
       fechaNacimiento: mas.fechaNacimiento, raza: mas.raza || '', color: mas.color || '',
       esterilizado: mas.esterilizado || false, alergias: mas.alergias || '',
       microchip: mas.microchip || '', notas: mas.notas || '',
-    });
+    };
+    setForm(values);
+    setInitialForm(values);
     setErrors({});
     setDialogOpen(true);
   };
@@ -206,7 +215,10 @@ export default function MascotasPage() {
       </div>
 
       {/* Form dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        if (open) setDialogOpen(true);
+        else requestDiscard(() => setDialogOpen(false));
+      }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? 'Editar Mascota' : 'Nueva Mascota'}</DialogTitle></DialogHeader>
           <div className="space-y-4">
@@ -215,7 +227,7 @@ export default function MascotasPage() {
               <Select value={form.clienteId} onValueChange={(v) => setForm({ ...form, clienteId: v })}>
                 <SelectTrigger><SelectValue placeholder="Seleccionar cliente..." /></SelectTrigger>
                 <SelectContent>
-                  {clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre} {c.apellido} - {c.cedula}</SelectItem>)}
+                  {clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre} {c.apellido}{c.cedula ? ` - ${c.cedula}` : ''}</SelectItem>)}
                 </SelectContent>
               </Select>
               {errors.clienteId && <p className="text-xs text-destructive">{errors.clienteId}</p>}
@@ -278,11 +290,13 @@ export default function MascotasPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => requestDiscard(() => setDialogOpen(false))}>Cancelar</Button>
             <Button onClick={handleSave} disabled={saving}>{saving ? 'Guardando...' : editing ? 'Guardar' : 'Crear'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {discardDialog}
 
       {/* Delete dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>

@@ -148,7 +148,7 @@ export default function StaffPage() {
         : [...prev, saved!]);
       setDialogOpen(false);
     } catch (error) {
-      setErrors({ submit: 'Error al guardar el usuario' });
+      setErrors({ submit: error instanceof Error ? error.message : 'Error al guardar el usuario' });
     } finally {
       setSaving(false);
     }
@@ -164,7 +164,7 @@ export default function StaffPage() {
       setDeleteTarget(null);
       setConfirmOpen(false);
     } catch (error) {
-      setErrors({ submit: 'Error al eliminar el usuario' });
+      setErrors({ submit: error instanceof Error ? error.message : 'Error al eliminar el usuario' });
     } finally {
       setDeleting(false);
     }

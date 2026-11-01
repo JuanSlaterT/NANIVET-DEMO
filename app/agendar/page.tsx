@@ -14,6 +14,7 @@ import { VERSION_AVISO_PRIVACIDAD } from '@/lib/models';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { Veterinario } from '@/lib/models';
+import { toast } from 'sonner';
 
 // Días en formato JS nativo: 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb
 // Días laborales: lunes a viernes (1,2,3,4,5)
@@ -241,7 +242,6 @@ export default function AgendarPage() {
       if (!form.nombre.trim()) e.nombre = 'Nombre obligatorio';
       if (!form.apellido.trim()) e.apellido = 'Apellido obligatorio';
       if (!form.telefono.trim()) e.telefono = 'Teléfono obligatorio';
-      if (!form.cedula.trim()) e.cedula = 'Cédula obligatoria';
       if (!form.mascotaNombre.trim()) e.mascotaNombre = 'Nombre de mascota obligatorio';
       if (!form.consentDatos) e.consentDatos = 'Debe aceptar el aviso de privacidad';
     }
@@ -285,7 +285,7 @@ export default function AgendarPage() {
     
     const vet = vets.find(v => v.id === form.veterinarioId);
     if (!vet || !vet.telefono) {
-      alert('No se encontró el teléfono del veterinario seleccionado');
+      toast.error('No se encontró el teléfono del veterinario seleccionado');
       return;
     }
     
@@ -594,9 +594,8 @@ export default function AgendarPage() {
                       {errors.telefono && <p className="text-xs text-destructive">{errors.telefono}</p>}
                     </div>
                     <div className="space-y-1.5">
-                      <Label>Cédula <span className="text-destructive">*</span></Label>
-                      <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="0901234567" />
-                      {errors.cedula && <p className="text-xs text-destructive">{errors.cedula}</p>}
+                      <Label>Cédula (opcional)</Label>
+                      <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Puedes registrarla después" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">

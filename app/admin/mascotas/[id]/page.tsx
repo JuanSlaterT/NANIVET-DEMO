@@ -19,6 +19,8 @@ import { formatDate, formatDateTime, buildWhatsAppUrl, ESTADOS_CITA, ESTADOS_CAS
 import type { Mascota, Cliente, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, PesoRegistrado, AuditLog, Hospitalizacion, Medicacion, Veterinario } from '@/lib/models';
 import { useAuth } from '@/components/auth-provider';
 import { resumirHistoria } from '@/lib/ia-service';
+import { AuditedActionDialog } from '@/components/admin/audited-action-dialog';
+import { toast } from 'sonner';
 import { ROLES_CLINICOS } from '@/lib/constants';
 
 const WeightChart = dynamic(
@@ -169,18 +171,14 @@ export default function MascotaDetailPage() {
 
   // ==================== VACUNA DELETE ====================
   const handleDeleteVacuna = async (id: string) => {
-    if (confirm('¿Eliminar esta vacuna?')) {
-      const deleted = await VacunaRepository.delete(id);
-      if (deleted) setVacunas(prev => prev.filter(v => v.id !== id));
-    }
+    const deleted = await VacunaRepository.delete(id);
+    if (deleted) setVacunas(prev => prev.filter(v => v.id !== id));
   };
 
   // ==================== DESPARASITACION DELETE ====================
   const handleDeleteDesparasitacion = async (id: string) => {
-    if (confirm('¿Eliminar esta desparasitación?')) {
-      const deleted = await DesparasitacionRepository.delete(id);
-      if (deleted) setDesparasitaciones(prev => prev.filter(d => d.id !== id));
-    }
+    const deleted = await DesparasitacionRepository.delete(id);
+    if (deleted) setDesparasitaciones(prev => prev.filter(d => d.id !== id));
   };
 
   // ==================== MEDICACIÓN CRUD ====================
@@ -202,7 +200,7 @@ export default function MascotaDetailPage() {
     // Find the first active hospitalization for this pet
     const activeHosp = hospitalizaciones.find(h => h.estado === 'hospitalizado');
     if (!activeHosp) {
-      alert('No hay hospitalizaciones activas para agregar medicación');
+      toast.error('No hay hospitalizaciones activas para agregar medicación');
       return;
     }
     const data = {
@@ -335,7 +333,7 @@ export default function MascotaDetailPage() {
               <>
                 <Link href={`/admin/clientes/${cliente.id}`} className="flex items-center gap-3 hover:text-primary transition-colors">
                   <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center"><User className="h-5 w-5 text-primary" /></div>
-                  <div><p className="text-sm font-medium">{cliente.nombre} {cliente.apellido}</p><p className="text-xs text-muted-foreground">CI: {cliente.cedula}</p></div>
+                  <div><p className="text-sm font-medium">{cliente.nombre} {cliente.apellido}</p><p className="text-xs text-muted-foreground">CI: {cliente.cedula || 'Sin registrar'}</p></div>
                 </Link>
                 <div className="text-sm space-y-1">
                   <p><span className="text-muted-foreground">Teléfono: </span>{cliente.telefono}</p>
@@ -443,9 +441,9 @@ export default function MascotaDetailPage() {
                         </Badge>
                       </div>
                       {isClinical && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0" onClick={() => handleDeleteVacuna(vac.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <AuditedActionDialog title="Eliminar vacuna" description={`Se eliminará “${vac.nombre}” del historial clínico.`} entity="Vacuna" entityId={vac.id} confirmLabel="Eliminar" onConfirm={() => handleDeleteVacuna(vac.id)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0"><Trash2 className="h-4 w-4" /></Button>
+                        </AuditedActionDialog>
                       )}
                     </div>
                   );
@@ -479,9 +477,9 @@ export default function MascotaDetailPage() {
                         </Badge>
                       </div>
                       {isClinical && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0" onClick={() => handleDeleteDesparasitacion(d.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <AuditedActionDialog title="Eliminar desparasitación" description={`Se eliminará “${d.producto}” del historial clínico.`} entity="Desparasitacion" entityId={d.id} confirmLabel="Eliminar" onConfirm={() => handleDeleteDesparasitacion(d.id)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0"><Trash2 className="h-4 w-4" /></Button>
+                        </AuditedActionDialog>
                       )}
                     </div>
                   );
@@ -587,9 +585,9 @@ export default function MascotaDetailPage() {
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditTratamiento(t)}>
                         <Edit className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { if (confirm('¿Eliminar este tratamiento?')) handleDeleteTratamiento(t.id); }}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <AuditedActionDialog title="Eliminar tratamiento" description={`Se eliminará “${t.nombre}” del historial clínico.`} entity="Tratamiento" entityId={t.id} confirmLabel="Eliminar" onConfirm={() => handleDeleteTratamiento(t.id)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+                      </AuditedActionDialog>
                     </div>
                   </div>
                 ))}
@@ -703,9 +701,9 @@ export default function MascotaDetailPage() {
                                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditMedicacion(med)}>
                                     <Edit className="h-3 w-3" />
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if (confirm('¿Eliminar esta medicación?')) handleDeleteMedicacion(med.id); }}>
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
+                                  <AuditedActionDialog title="Eliminar medicación" description={`Se eliminará “${med.medicamento}” de la hospitalización.`} entity="Medicacion" entityId={med.id} confirmLabel="Eliminar" onConfirm={() => handleDeleteMedicacion(med.id)}>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive"><Trash2 className="h-3 w-3" /></Button>
+                                  </AuditedActionDialog>
                                 </>
                               )}
                             </div>

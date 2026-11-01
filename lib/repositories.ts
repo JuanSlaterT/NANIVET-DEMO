@@ -18,7 +18,7 @@ import { LIMITE_HORAS_CANCELAR } from './constants';
 export const AuthRepository = {
   async login(email: string, password: string): Promise<UsuarioAuth | null> {
     const res = await api.login({ email, password });
-    if (res.error) return null;
+    if (res.error) throw new Error(res.error.message);
     return (res.data?.user as UsuarioAuth | undefined) ?? null;
   },
 
@@ -68,7 +68,8 @@ export const StaffRepository = {
   },
 
   async delete(id: string): Promise<void> {
-    await api.deleteStaff(id);
+    const res = await api.deleteStaff(id);
+    if (res.error) throw new Error(res.error.message);
   },
 };
 
@@ -140,7 +141,8 @@ export const VeterinarioRepository = {
   },
 
   async removeBloqueo(id: string): Promise<void> {
-    await api.deleteBloqueo(id);
+    const res = await api.deleteBloqueo(id);
+    if (res.error) throw new Error(res.error.message);
   },
 };
 
@@ -379,8 +381,8 @@ export const CasoRepository = {
     return transformCasoRow(res.data) as CasoClinico;
   },
 
-  async update(id: string, data: Partial<CasoClinico>): Promise<CasoClinico | null> {
-    const res = await api.updateCaso(id, data);
+  async update(id: string, data: Partial<CasoClinico>, options?: { silent?: boolean }): Promise<CasoClinico | null> {
+    const res = await api.updateCaso(id, data, options?.silent);
     if (res.error) return null;
     return res.data as CasoClinico;
   },
@@ -885,8 +887,8 @@ export const CatalogoRepository = {
 
   async deleteVacuna(id: string): Promise<boolean> {
     try {
-      await api.deleteCatalogoVacuna(id);
-      return true;
+      const res = await api.deleteCatalogoVacuna(id);
+      return !res.error;
     } catch {
       return false;
     }
@@ -939,8 +941,8 @@ export const CatalogoRepository = {
 
   async deleteDesparasitacion(id: string): Promise<boolean> {
     try {
-      await api.deleteCatalogoDesparasitacion(id);
-      return true;
+      const res = await api.deleteCatalogoDesparasitacion(id);
+      return !res.error;
     } catch {
       return false;
     }
