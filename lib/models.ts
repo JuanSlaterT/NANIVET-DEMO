@@ -292,7 +292,7 @@ export interface AuditLog {
   usuario: string;
   rol: string;
   fechaHora: string;
-  accion: 'crear' | 'editar' | 'eliminar' | 'consultar' | 'revocar' | 'confirmar' | 'cancelar' | 'reprogramar' | 'enviar_campaña' | 'alta_hospitalizacion';
+  accion: string;
   entidad: string;
   entidadId: string;
   valoresAntes?: Record<string, unknown> | null;

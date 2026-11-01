@@ -13,8 +13,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { AlertTriangle, ArrowLeft, PawPrint, Syringe, Pill, Scissors, FileText, Calendar, TrendingUp, MessageCircle, User, ClipboardList, Sparkles, Plus, Edit, Trash2, HeartPulse, Camera, ImagePlus, Loader2, ExternalLink } from 'lucide-react';
-import { MascotaRepository, ClienteRepository, CitaRepository, CasoRepository, VacunaRepository, TratamientoRepository, DesparasitacionRepository, CirugiaRepository, ExamenRepository, PesoRepository, AuditRepository, HospitalizacionRepository, MedicacionRepository, VeterinarioRepository } from '@/lib/repositories';
+import { AlertTriangle, ArrowLeft, PawPrint, Syringe, Pill, Scissors, FileText, Calendar, TrendingUp, MessageCircle, User, ClipboardList, Sparkles, Plus, Edit, Trash2, HeartPulse, Camera, ImagePlus, Loader2, ExternalLink, FileDown, ShieldCheck } from 'lucide-react';
+import { MascotaRepository, ClienteRepository, CitaRepository, CasoRepository, VacunaRepository, TratamientoRepository, DesparasitacionRepository, CirugiaRepository, ExamenRepository, PesoRepository, AuditRepository, HospitalizacionRepository, MedicacionRepository, VeterinarioRepository, EvolucionRepository } from '@/lib/repositories';
 import { formatDate, formatDateTime, buildWhatsAppUrl, ESTADOS_CITA, ESTADOS_CASO, TIPOS_SERVICIO, ESTADOS_HOSPITALIZACION } from '@/lib/constants';
 import type { Mascota, Cliente, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, PesoRegistrado, AuditLog, Hospitalizacion, Medicacion, Veterinario } from '@/lib/models';
 import { useAuth } from '@/components/auth-provider';
@@ -23,6 +23,7 @@ import { AuditedActionDialog } from '@/components/admin/audited-action-dialog';
 import { toast } from 'sonner';
 import { ROLES_CLINICOS } from '@/lib/constants';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
+import { generateReferralPdf } from '@/lib/referral-pdf';
 
 const WeightChart = dynamic(
   () => import('@/components/admin/weight-chart').then((module) => module.WeightChart),
@@ -58,6 +59,14 @@ export default function MascotaDetailPage() {
     fecha: new Date().toISOString().split('T')[0],
     descripcion: '',
     casoId: '',
+  });
+  const [referralDialogOpen, setReferralDialogOpen] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [referralForm, setReferralForm] = useState({
+    motivo: '',
+    especialidadDestino: '',
+    solicitud: '',
+    incluirRadiografias: true,
   });
   const { user } = useAuth();
   const isClinical = user ? ROLES_CLINICOS.includes(user.rol) : false;
@@ -126,7 +135,7 @@ export default function MascotaDetailPage() {
         HospitalizacionRepository.getByMascota(mascotaId),
         MedicacionRepository.getByMascota(mascotaId),
         VeterinarioRepository.getAll(),
-        AuditRepository.getByEntidad('Mascota', mascotaId),
+        AuditRepository.getByMascota(mascotaId),
       ]);
       
       if (cancelled) return;
@@ -232,6 +241,59 @@ export default function MascotaDetailPage() {
   const handleDeleteExamen = async (id: string) => {
     if (await ExamenRepository.delete(id)) {
       setExamenes(previous => previous.filter(exam => exam.id !== id));
+    }
+  };
+
+  const handleGenerateReferralPdf = async () => {
+    if (!mascota || !referralForm.motivo.trim() || pdfGenerating) return;
+    setPdfGenerating(true);
+    try {
+      const evolutionGroups = await Promise.all(
+        hospitalizaciones.map(hospitalization => EvolucionRepository.getByHospitalizacion(hospitalization.id)),
+      );
+      const clientFullName = cliente ? `${cliente.nombre} ${cliente.apellido}`.trim() : '';
+      const protectedValues = [
+        clientFullName,
+        cliente?.cedula || '',
+        cliente?.telefono || '',
+        cliente?.email || '',
+        cliente?.direccion || '',
+        user?.nombre || '',
+        user?.email || '',
+        ...veterinarios.flatMap(vet => [vet.nombre, vet.telefono]),
+      ].filter(Boolean);
+
+      await generateReferralPdf({
+        mascota,
+        citas,
+        casos,
+        vacunas,
+        tratamientos,
+        desparasitaciones,
+        cirugias,
+        examenes,
+        pesos,
+        hospitalizaciones,
+        medicaciones,
+        evoluciones: evolutionGroups.flat(),
+      }, {
+        motivo: referralForm.motivo.trim(),
+        especialidadDestino: referralForm.especialidadDestino.trim() || undefined,
+        solicitud: referralForm.solicitud.trim() || undefined,
+        incluirRadiografias: referralForm.incluirRadiografias,
+        redactions: protectedValues,
+      });
+
+      await AuditRepository.registerReferralExport(mascota.id, {
+        incluyeRadiografias: referralForm.incluirRadiografias,
+      });
+
+      setReferralDialogOpen(false);
+      toast.success('PDF de referencia generado');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No fue posible generar el PDF');
+    } finally {
+      setPdfGenerating(false);
     }
   };
 
@@ -390,8 +452,8 @@ export default function MascotaDetailPage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <Link href="/admin/mascotas"><Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button></Link>
-        <div className="flex min-w-0 flex-1 items-center gap-4">
-          <div className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border bg-muted shadow-sm sm:h-28 sm:w-28">
+        <div className="flex min-w-0 flex-1 items-center gap-5 md:gap-7">
+          <div className="group relative h-32 w-32 shrink-0 overflow-hidden rounded-3xl border bg-muted shadow-md sm:h-40 sm:w-40 md:h-48 md:w-48">
             {/* URL firmada y temporal; Next/Image no puede optimizar un host dinámico con firma. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -422,6 +484,11 @@ export default function MascotaDetailPage() {
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{mascota.nombre}</h1>
             <p className="text-sm text-muted-foreground">{mascota.especie} - {mascota.raza || 'Mestizo'} - {mascota.sexo} - {edadMascota(mascota.fechaNacimiento)}</p>
+            {isClinical && (
+              <Button variant="outline" className="mt-4 gap-2" onClick={() => setReferralDialogOpen(true)}>
+                <FileDown className="h-4 w-4" /> Exportar referencia PDF
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1061,13 +1128,43 @@ export default function MascotaDetailPage() {
         {isClinical && (
         <TabsContent value="auditoria">
           <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Historial completo de {mascota.nombre}</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Incluye cambios de la mascota, citas, casos clínicos, vacunas, tratamientos, desparasitaciones, cirugías, radiografías, peso, hospitalizaciones, medicaciones, tomas y evoluciones.
+              </p>
+            </CardHeader>
             <CardContent className="p-0">
-              <div className="divide-y divide-border/30 max-h-96 overflow-y-auto">
+              <div className="max-h-[36rem] divide-y divide-border/30 overflow-y-auto touch-scroll">
                 {auditLogs.map((log) => (
-                  <div key={log.id} className="p-3 flex items-center gap-3 text-sm">
-                    <Badge variant="outline" className="text-[10px] shrink-0">{log.accion}</Badge>
-                    <span className="text-muted-foreground flex-1 min-w-0 truncate">{log.usuario} - {formatDateTime(log.fechaHora)}</span>
-                    <span className="text-xs text-muted-foreground shrink-0">{log.entidad}</span>
+                  <div key={log.id} className="space-y-2 p-4 text-sm hover:bg-accent/20">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="shrink-0 text-[10px] uppercase">{log.accion.replaceAll('_', ' ')}</Badge>
+                      <Badge variant="secondary" className="shrink-0 text-[10px]">{log.entidad}</Badge>
+                      <span className="font-mono text-[10px] text-muted-foreground">{log.entidadId}</span>
+                      <span className="ml-auto text-xs text-muted-foreground">{formatDateTime(log.fechaHora)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Realizado por <span className="font-medium text-foreground">{log.usuario}</span> ({log.rol})
+                    </p>
+                    {log.diff && log.diff.length > 0 && (
+                      <div className="space-y-1 rounded-lg bg-accent/30 p-2">
+                        {log.diff.map((change, index) => (
+                          <p key={`${change.campo}-${index}`} className="break-words text-xs">
+                            <span className="font-medium">{change.campo}:</span>{' '}
+                            <span className="text-red-600 line-through dark:text-red-400">{String(change.antes ?? 'Sin dato')}</span>{' → '}
+                            <span className="text-emerald-700 dark:text-emerald-400">{String(change.despues ?? 'Sin dato')}</span>
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {(!log.diff || log.diff.length === 0) && log.valoresDespues && Object.keys(log.valoresDespues).length > 0 && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 rounded-lg bg-accent/30 p-2 text-xs">
+                        {Object.entries(log.valoresDespues).map(([field, value]) => (
+                          <span key={field} className="break-all"><span className="font-medium">{field}:</span> {String(value ?? 'Sin dato')}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {auditLogs.length === 0 && <p className="text-center text-muted-foreground py-8">Sin registros de auditoría</p>}
@@ -1078,6 +1175,72 @@ export default function MascotaDetailPage() {
         )}
       </Tabs>
       {radiographDiscardDialog}
+
+      <Dialog open={referralDialogOpen} onOpenChange={open => { if (!pdfGenerating) setReferralDialogOpen(open); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><FileDown className="h-5 w-5 text-primary" /> Exportar referencia veterinaria</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-3 rounded-xl border border-teal-500/30 bg-teal-500/10 p-3">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-teal-600" />
+              <div>
+                <p className="text-sm font-medium">Documento clínico anonimizado</p>
+                <p className="mt-1 text-xs text-muted-foreground">El PDF excluye datos personales del propietario y de los profesionales. Tampoco incluye cédula, teléfono, correo, dirección, microchip ni identificadores internos.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="referral-reason">Motivo de referencia o propósito del informe *</Label>
+              <Textarea
+                id="referral-reason"
+                maxLength={1000}
+                rows={3}
+                placeholder="Ej. Evaluación por cardiología debido a soplo y baja tolerancia al ejercicio"
+                value={referralForm.motivo}
+                onChange={event => setReferralForm(previous => ({ ...previous, motivo: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="referral-specialty">Especialidad o servicio de destino</Label>
+              <Input
+                id="referral-specialty"
+                maxLength={150}
+                placeholder="Ej. Cardiología veterinaria"
+                value={referralForm.especialidadDestino}
+                onChange={event => setReferralForm(previous => ({ ...previous, especialidadDestino: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="referral-request">Solicitud clínica para el profesional receptor</Label>
+              <Textarea
+                id="referral-request"
+                maxLength={1500}
+                rows={3}
+                placeholder="Preguntas clínicas, estudios solicitados o aspectos que deben evaluarse"
+                value={referralForm.solicitud}
+                onChange={event => setReferralForm(previous => ({ ...previous, solicitud: event.target.value }))}
+              />
+            </div>
+            <label htmlFor="include-radiographs" className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
+              <input
+                id="include-radiographs"
+                type="checkbox"
+                className="mt-0.5 h-5 w-5 rounded accent-primary"
+                checked={referralForm.incluirRadiografias}
+                onChange={event => setReferralForm(previous => ({ ...previous, incluirRadiografias: event.target.checked }))}
+              />
+              <span><span className="block text-sm font-medium">Incluir imágenes radiográficas</span><span className="mt-0.5 block text-xs text-muted-foreground">Puede aumentar el tamaño del archivo y el tiempo de generación.</span></span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={pdfGenerating} onClick={() => setReferralDialogOpen(false)}>Cancelar</Button>
+            <Button className="gap-2" disabled={pdfGenerating || !referralForm.motivo.trim()} onClick={handleGenerateReferralPdf}>
+              {pdfGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+              {pdfGenerating ? 'Preparando PDF...' : 'Generar y descargar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

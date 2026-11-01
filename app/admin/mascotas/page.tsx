@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { PawPrint, Search, Plus, Edit, Trash2, Eye, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Eye, AlertTriangle } from 'lucide-react';
 import { MascotaRepository, ClienteRepository } from '@/lib/repositories';
 import { ESPECIES, SEXOS, formatDate } from '@/lib/constants';
 import type { Mascota, Cliente } from '@/lib/models';
@@ -181,9 +181,21 @@ export default function MascotasPage() {
             <Card key={mas.id} className="hover:border-primary/40 transition-all group">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                    <PawPrint className="h-6 w-6 text-primary" />
-                  </div>
+                  <Link
+                    href={`/admin/mascotas/${mas.id}`}
+                    className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-muted shadow-sm md:h-20 md:w-20"
+                    aria-label={`Ver ficha de ${mas.nombre}`}
+                  >
+                    {/* La foto puede ser una URL firmada temporal de Supabase Storage. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={mas.fotoUrl || '/default-pet-avatar.svg'}
+                      alt={`Foto de ${mas.nombre}`}
+                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                      loading="lazy"
+                      onError={event => { event.currentTarget.src = '/default-pet-avatar.svg'; }}
+                    />
+                  </Link>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <Link href={`/admin/mascotas/${mas.id}`} className="font-medium hover:text-primary transition-colors truncate">{mas.nombre}</Link>

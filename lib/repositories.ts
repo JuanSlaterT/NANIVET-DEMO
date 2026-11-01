@@ -646,13 +646,24 @@ export const AuditRepository = {
   async getAll(params?: Record<string, string>): Promise<AuditLog[]> {
     const res = await api.getAuditoria(params);
     if (res.error) return [];
-    return (res.data as AuditLog[]).sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
+    return normalizeAuditLogs(res.data);
   },
 
   async getByEntidad(entidad: string, entidadId?: string): Promise<AuditLog[]> {
     const res = await api.getAuditoriaEntidad(entidad, entidadId || '');
     if (res.error) return [];
-    return (res.data as AuditLog[]).sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
+    return normalizeAuditLogs(res.data);
+  },
+
+  async getByMascota(mascotaId: string): Promise<AuditLog[]> {
+    const res = await api.getAuditoriaMascota(mascotaId);
+    if (res.error) return [];
+    return normalizeAuditLogs(res.data);
+  },
+
+  async registerReferralExport(mascotaId: string, data: { incluyeRadiografias: boolean }): Promise<boolean> {
+    const res = await api.registerMascotaReferralExport(mascotaId, data);
+    return !res.error;
   },
 
   async search(filters: { usuario?: string; accion?: string; entidad?: string; desde?: string; hasta?: string }): Promise<AuditLog[]> {
@@ -664,9 +675,19 @@ export const AuditRepository = {
     if (filters.hasta) params.hasta = filters.hasta;
     const res = await api.getAuditoria(params);
     if (res.error) return [];
-    return (res.data as AuditLog[]).sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
+    return normalizeAuditLogs(res.data);
   },
 };
+
+function normalizeAuditLogs(data: unknown): AuditLog[] {
+  if (!Array.isArray(data)) return [];
+  return data.map((item: Record<string, unknown>) => ({
+    ...(item as unknown as AuditLog),
+    valoresAntes: (item.valoresAntes ?? item.valoresAnteriores ?? null) as Record<string, unknown> | null,
+    valoresDespues: (item.valoresDespues ?? item.valoresNuevos ?? null) as Record<string, unknown> | null,
+    diff: (item.diff ?? item.diffCampos ?? []) as AuditLog['diff'],
+  })).sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
+}
 
 // ==================== HOSPITALIZACIÓN REPOSITORY ====================
 export const HospitalizacionRepository = {

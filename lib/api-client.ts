@@ -1107,6 +1107,18 @@ export const api = {
     return fetchApi(`${API_BASE}/auditoria/entidad/${entidad}/${entidadId}`);
   },
 
+  async getAuditoriaMascota(mascotaId: string): Promise<ApiResponse<unknown[]>> {
+    return fetchApi(`${API_BASE}/auditoria/mascota/${encodeURIComponent(mascotaId)}`);
+  },
+
+  async registerMascotaReferralExport(mascotaId: string, data: { incluyeRadiografias: boolean }): Promise<ApiResponse<unknown>> {
+    return fetchApi(`${API_BASE}/auditoria/mascota/${encodeURIComponent(mascotaId)}/exportacion`, {
+      method: 'POST',
+      headers: { 'X-Nanivet-Suppress-Feedback': 'true' },
+      body: JSON.stringify(data),
+    });
+  },
+
   // ===== CAMPAÑAS =====
   async getCampanaSegmentos(): Promise<ApiResponse<Record<string, unknown>>> {
     return fetchApi(`${API_BASE}/campanas/segmentos`);
