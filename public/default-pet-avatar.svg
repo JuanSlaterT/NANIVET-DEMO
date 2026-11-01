@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-labelledby="title description">
+  <title id="title">Mascota sin foto</title>
+  <desc id="description">Ilustración predeterminada de una huella</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e0f2fe"/>
+      <stop offset="1" stop-color="#ccfbf1"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="320" rx="48" fill="url(#background)"/>
+  <circle cx="160" cy="180" r="62" fill="#0f766e"/>
+  <ellipse cx="89" cy="128" rx="31" ry="42" transform="rotate(-25 89 128)" fill="#0f766e"/>
+  <ellipse cx="231" cy="128" rx="31" ry="42" transform="rotate(25 231 128)" fill="#0f766e"/>
+  <ellipse cx="132" cy="89" rx="29" ry="39" transform="rotate(-8 132 89)" fill="#0f766e"/>
+  <ellipse cx="188" cy="89" rx="29" ry="39" transform="rotate(8 188 89)" fill="#0f766e"/>
+  <path d="M100 226c18 25 38 36 60 36s42-11 60-36c-17 10-37 15-60 15s-43-5-60-15Z" fill="#115e59" opacity=".55"/>
+</svg>

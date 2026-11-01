@@ -233,6 +233,12 @@ export const MascotaRepository = {
     const res = await api.searchMascotas(query);
     return res.error ? [] : (res.data as Mascota[]);
   },
+
+  async uploadProfile(id: string, image: File): Promise<Mascota> {
+    const res = await api.uploadMascotaProfile(id, image);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Mascota;
+  },
 };
 
 // ==================== CITA REPOSITORY ====================
@@ -598,6 +604,15 @@ export const ExamenRepository = {
 
   async create(data: Omit<Examen, 'id'>): Promise<Examen> {
     const res = await api.createExamen(data);
+    if (res.error) throw new Error(res.error.message);
+    return res.data as Examen;
+  },
+
+  async uploadRadiograph(
+    mascotaId: string,
+    data: { image: File; fecha: string; descripcion: string; titulo?: string; casoId?: string },
+  ): Promise<Examen> {
+    const res = await api.uploadMascotaRadiograph(mascotaId, data);
     if (res.error) throw new Error(res.error.message);
     return res.data as Examen;
   },

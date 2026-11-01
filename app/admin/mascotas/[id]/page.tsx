@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { AlertTriangle, ArrowLeft, PawPrint, Syringe, Pill, Scissors, FileText, Calendar, TrendingUp, MessageCircle, User, ClipboardList, Sparkles, Plus, Edit, Trash2, HeartPulse } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, PawPrint, Syringe, Pill, Scissors, FileText, Calendar, TrendingUp, MessageCircle, User, ClipboardList, Sparkles, Plus, Edit, Trash2, HeartPulse, Camera, ImagePlus, Loader2, ExternalLink } from 'lucide-react';
 import { MascotaRepository, ClienteRepository, CitaRepository, CasoRepository, VacunaRepository, TratamientoRepository, DesparasitacionRepository, CirugiaRepository, ExamenRepository, PesoRepository, AuditRepository, HospitalizacionRepository, MedicacionRepository, VeterinarioRepository } from '@/lib/repositories';
 import { formatDate, formatDateTime, buildWhatsAppUrl, ESTADOS_CITA, ESTADOS_CASO, TIPOS_SERVICIO, ESTADOS_HOSPITALIZACION } from '@/lib/constants';
 import type { Mascota, Cliente, Cita, CasoClinico, Vacuna, Tratamiento, Desparasitacion, Cirugia, Examen, PesoRegistrado, AuditLog, Hospitalizacion, Medicacion, Veterinario } from '@/lib/models';
@@ -22,6 +22,7 @@ import { resumirHistoria } from '@/lib/ia-service';
 import { AuditedActionDialog } from '@/components/admin/audited-action-dialog';
 import { toast } from 'sonner';
 import { ROLES_CLINICOS } from '@/lib/constants';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 const WeightChart = dynamic(
   () => import('@/components/admin/weight-chart').then((module) => module.WeightChart),
@@ -47,8 +48,30 @@ export default function MascotaDetailPage() {
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [profileUploading, setProfileUploading] = useState(false);
+  const [radiographDialogOpen, setRadiographDialogOpen] = useState(false);
+  const [radiographUploading, setRadiographUploading] = useState(false);
+  const [radiographImage, setRadiographImage] = useState<File | null>(null);
+  const [radiographPreview, setRadiographPreview] = useState<string | null>(null);
+  const [radiographForm, setRadiographForm] = useState({
+    titulo: '',
+    fecha: new Date().toISOString().split('T')[0],
+    descripcion: '',
+    casoId: '',
+  });
   const { user } = useAuth();
   const isClinical = user ? ROLES_CLINICOS.includes(user.rol) : false;
+  const radiographDirty = Boolean(
+    radiographImage
+    || radiographForm.titulo.trim()
+    || radiographForm.descripcion.trim()
+    || radiographForm.casoId
+    || radiographForm.fecha !== new Date().toISOString().split('T')[0],
+  );
+  const {
+    requestDiscard: requestRadiographDiscard,
+    discardDialog: radiographDiscardDialog,
+  } = useUnsavedChanges(radiographDialogOpen && radiographDirty && !radiographUploading);
 
   // Tratamiento CRUD state
   const [tratamientoDialogOpen, setTratamientoDialogOpen] = useState(false);
@@ -128,6 +151,89 @@ export default function MascotaDetailPage() {
       cancelled = true;
     };
   }, [mascotaId, router]);
+
+  useEffect(() => {
+    if (!radiographImage) {
+      setRadiographPreview(null);
+      return;
+    }
+    const preview = URL.createObjectURL(radiographImage);
+    setRadiographPreview(preview);
+    return () => URL.revokeObjectURL(preview);
+  }, [radiographImage]);
+
+  const validateImage = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('El archivo seleccionado debe ser una imagen');
+      return false;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      toast.error('La imagen no puede superar 12 MB');
+      return false;
+    }
+    return true;
+  };
+
+  const handleProfileUpload = async (file?: File) => {
+    if (!file || !mascota || !validateImage(file)) return;
+    setProfileUploading(true);
+    try {
+      const updated = await MascotaRepository.uploadProfile(mascota.id, file);
+      setMascota(updated);
+      toast.success('Foto de perfil actualizada');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No fue posible subir la foto');
+    } finally {
+      setProfileUploading(false);
+    }
+  };
+
+  const resetRadiographForm = () => {
+    setRadiographImage(null);
+    setRadiographForm({
+      titulo: '',
+      fecha: new Date().toISOString().split('T')[0],
+      descripcion: '',
+      casoId: '',
+    });
+  };
+
+  const handleRadiographUpload = async () => {
+    if (!mascota || !radiographImage) {
+      toast.error('Selecciona la imagen de la radiografía');
+      return;
+    }
+    if (!radiographForm.fecha || !radiographForm.descripcion.trim()) {
+      toast.error('Completa la fecha y la descripción');
+      return;
+    }
+    if (!validateImage(radiographImage)) return;
+
+    setRadiographUploading(true);
+    try {
+      const created = await ExamenRepository.uploadRadiograph(mascota.id, {
+        image: radiographImage,
+        fecha: radiographForm.fecha,
+        descripcion: radiographForm.descripcion.trim(),
+        titulo: radiographForm.titulo.trim() || undefined,
+        casoId: radiographForm.casoId || undefined,
+      });
+      setExamenes(previous => [...previous, created].sort((a, b) => b.fecha.localeCompare(a.fecha)));
+      resetRadiographForm();
+      setRadiographDialogOpen(false);
+      toast.success('Radiografía guardada');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No fue posible guardar la radiografía');
+    } finally {
+      setRadiographUploading(false);
+    }
+  };
+
+  const handleDeleteExamen = async (id: string) => {
+    if (await ExamenRepository.delete(id)) {
+      setExamenes(previous => previous.filter(exam => exam.id !== id));
+    }
+  };
 
   // ==================== TRATAMIENTO CRUD ====================
   const openNewTratamiento = () => {
@@ -274,6 +380,7 @@ export default function MascotaDetailPage() {
 
   const pesoData = pesos.map(p => ({ fecha: formatDate(p.fecha), peso: p.peso }));
   const ultimoPeso = pesos.length > 0 ? pesos[pesos.length - 1].peso : null;
+  const radiografias = examenes.filter(exam => exam.tipo.toLocaleLowerCase('es').includes('radiograf'));
 
   const whatsappMsg = cliente
     ? `Hola ${cliente.nombre}, le recordamos que ${mascota.nombre} tiene registros en Clínica Veterinaria NANIVET.`
@@ -281,11 +388,41 @@ export default function MascotaDetailPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-start gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <Link href="/admin/mascotas"><Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button></Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold tracking-tight">{mascota.nombre}</h1>
-          <p className="text-sm text-muted-foreground">{mascota.especie} - {mascota.raza || 'Mestizo'} - {mascota.sexo} - {edadMascota(mascota.fechaNacimiento)}</p>
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <div className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border bg-muted shadow-sm sm:h-28 sm:w-28">
+            {/* URL firmada y temporal; Next/Image no puede optimizar un host dinámico con firma. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mascota.fotoUrl || '/default-pet-avatar.svg'}
+              alt={`Foto de ${mascota.nombre}`}
+              className="h-full w-full object-cover"
+              onError={event => { event.currentTarget.src = '/default-pet-avatar.svg'; }}
+            />
+            <label
+              htmlFor="pet-profile-image"
+              className="absolute inset-x-0 bottom-0 flex min-h-11 cursor-pointer items-center justify-center gap-1.5 bg-black/65 px-2 text-xs font-medium text-white transition-colors hover:bg-black/75 focus-within:ring-2 focus-within:ring-primary"
+            >
+              {profileUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+              {profileUploading ? 'Subiendo' : 'Cambiar foto'}
+              <input
+                id="pet-profile-image"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif"
+                className="sr-only"
+                disabled={profileUploading}
+                onChange={event => {
+                  void handleProfileUpload(event.target.files?.[0]);
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{mascota.nombre}</h1>
+            <p className="text-sm text-muted-foreground">{mascota.especie} - {mascota.raza || 'Mestizo'} - {mascota.sexo} - {edadMascota(mascota.fechaNacimiento)}</p>
+          </div>
         </div>
       </div>
 
@@ -380,6 +517,7 @@ export default function MascotaDetailPage() {
           <TabsTrigger value="vacunas" className="gap-1.5"><Syringe className="h-3.5 w-3.5" /> Carnet de vacunas</TabsTrigger>
           <TabsTrigger value="peso" className="gap-1.5"><TrendingUp className="h-3.5 w-3.5" /> Gráfica de peso</TabsTrigger>
           {isClinical && <TabsTrigger value="tratamientos" className="gap-1.5"><Pill className="h-3.5 w-3.5" /> Tratamientos ({tratamientos.length})</TabsTrigger>}
+          {isClinical && <TabsTrigger value="radiografias" className="gap-1.5"><ImagePlus className="h-3.5 w-3.5" /> Radiografías ({radiografias.length})</TabsTrigger>}
           <TabsTrigger value="desparasitaciones" className="gap-1.5"><Pill className="h-3.5 w-3.5" /> Desparasitaciones ({desparasitaciones.length})</TabsTrigger>
           {isClinical && <TabsTrigger value="hospitalizacion" className="gap-1.5"><HeartPulse className="h-3.5 w-3.5" /> Hospitalización ({hospitalizaciones.length})</TabsTrigger>}
           {isClinical && <TabsTrigger value="casos" className="gap-1.5"><ClipboardList className="h-3.5 w-3.5" /> Casos</TabsTrigger>}
@@ -418,6 +556,149 @@ export default function MascotaDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Radiografías */}
+        {isClinical && (
+          <TabsContent value="radiografias">
+            <Card>
+              <CardHeader className="flex-row items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Radiografías</CardTitle>
+                  <p className="mt-1 text-xs text-muted-foreground">Imágenes diagnósticas almacenadas de forma privada.</p>
+                </div>
+                <Dialog
+                  open={radiographDialogOpen}
+                  onOpenChange={open => {
+                    if (radiographUploading) return;
+                    if (open) {
+                      setRadiographDialogOpen(true);
+                      return;
+                    }
+                    requestRadiographDiscard(() => {
+                      resetRadiographForm();
+                      setRadiographDialogOpen(false);
+                    });
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button className="shrink-0 gap-2"><Plus className="h-4 w-4" /> <span className="hidden sm:inline">Agregar radiografía</span><span className="sm:hidden">Agregar</span></Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-xl">
+                    <DialogHeader>
+                      <DialogTitle>Agregar radiografía</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="radiograph-image">Imagen *</Label>
+                        <label
+                          htmlFor="radiograph-image"
+                          className="flex min-h-32 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed bg-muted/30 text-center transition-colors hover:border-primary/60"
+                        >
+                          {radiographPreview ? (
+                            // Vista previa local creada con URL.createObjectURL.
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={radiographPreview} alt="Vista previa de la radiografía" className="max-h-64 w-full object-contain" />
+                          ) : (
+                            <div className="p-6">
+                              <ImagePlus className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+                              <p className="text-sm font-medium">Toca para elegir o tomar una imagen</p>
+                              <p className="mt-1 text-xs text-muted-foreground">JPG, PNG, WebP, HEIC o AVIF; máximo 12 MB</p>
+                            </div>
+                          )}
+                          <input
+                            id="radiograph-image"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif"
+                            className="sr-only"
+                            onChange={event => {
+                              const file = event.target.files?.[0] || null;
+                              setRadiographImage(file && validateImage(file) ? file : null);
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="radiograph-date">Fecha de toma *</Label>
+                          <Input id="radiograph-date" type="date" value={radiographForm.fecha} onChange={event => setRadiographForm(previous => ({ ...previous, fecha: event.target.value }))} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="radiograph-title">Título</Label>
+                          <Input id="radiograph-title" maxLength={200} placeholder="Ej. Tórax lateral" value={radiographForm.titulo} onChange={event => setRadiographForm(previous => ({ ...previous, titulo: event.target.value }))} />
+                        </div>
+                      </div>
+                      {casos.length > 0 && (
+                        <div className="space-y-2">
+                          <Label>Caso clínico relacionado</Label>
+                          <Select value={radiographForm.casoId || 'none'} onValueChange={value => setRadiographForm(previous => ({ ...previous, casoId: value === 'none' ? '' : value }))}>
+                            <SelectTrigger><SelectValue placeholder="Sin caso relacionado" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Sin caso relacionado</SelectItem>
+                              {casos.map(caso => <SelectItem key={caso.id} value={caso.id}>{formatDate(caso.fecha)} - {caso.motivo}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        <Label htmlFor="radiograph-description">Descripción *</Label>
+                        <Textarea id="radiograph-description" maxLength={2000} rows={4} placeholder="Vista, región anatómica y observaciones relevantes" value={radiographForm.descripcion} onChange={event => setRadiographForm(previous => ({ ...previous, descripcion: event.target.value }))} />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => requestRadiographDiscard(() => { resetRadiographForm(); setRadiographDialogOpen(false); })} disabled={radiographUploading}>Cancelar</Button>
+                      <Button onClick={handleRadiographUpload} disabled={radiographUploading || !radiographImage || !radiographForm.fecha || !radiographForm.descripcion.trim()} className="gap-2">
+                        {radiographUploading && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {radiographUploading ? 'Guardando...' : 'Guardar radiografía'}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                {radiografias.length === 0 ? (
+                  <div className="rounded-xl border border-dashed py-12 text-center">
+                    <ImagePlus className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
+                    <p className="font-medium">Aún no hay radiografías</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Agrega la primera imagen diagnóstica de {mascota.nombre}.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {radiografias.map(radiograph => (
+                      <article key={radiograph.id} className="overflow-hidden rounded-xl border bg-card">
+                        <div className="relative aspect-[4/3] bg-black/90">
+                          {radiograph.archivoUrl ? (
+                            // URL firmada y temporal de un bucket privado.
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={radiograph.archivoUrl} alt={radiograph.titulo || `Radiografía del ${formatDate(radiograph.fecha)}`} className="h-full w-full object-contain" />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-sm text-white/70">Imagen no disponible</div>
+                          )}
+                        </div>
+                        <div className="space-y-3 p-4">
+                          <div>
+                            <p className="font-medium">{radiograph.titulo || 'Radiografía'}</p>
+                            <p className="text-xs text-muted-foreground">Tomada el {formatDate(radiograph.fecha)}</p>
+                          </div>
+                          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{radiograph.descripcion}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {radiograph.archivoUrl && (
+                              <Button asChild variant="outline" size="sm" className="gap-1.5">
+                                <a href={radiograph.archivoUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Ver completa</a>
+                              </Button>
+                            )}
+                            <AuditedActionDialog title="Eliminar radiografía" description="La imagen y su registro clínico se eliminarán de forma permanente." entity="Examen" entityId={radiograph.id} confirmLabel="Eliminar" onConfirm={() => handleDeleteExamen(radiograph.id)}>
+                              <Button variant="destructive" size="sm" className="gap-1.5"><Trash2 className="h-3.5 w-3.5" /> Eliminar</Button>
+                            </AuditedActionDialog>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
 
         {/* Vacunas - Carnet */}
         <TabsContent value="vacunas">
@@ -796,6 +1077,7 @@ export default function MascotaDetailPage() {
         </TabsContent>
         )}
       </Tabs>
+      {radiographDiscardDialog}
     </div>
   );
 }

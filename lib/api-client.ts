@@ -356,11 +356,18 @@ function showApiSuccess(method: string, url: string, body: any): void {
   });
 }
 
-function buildHeaders(headersInit: HeadersInit | undefined, token: string | null): Headers {
+function buildHeaders(
+  headersInit: HeadersInit | undefined,
+  token: string | null,
+  body?: BodyInit | null,
+): Headers {
   const headers = new Headers(headersInit);
   headers.delete('X-Nanivet-Suppress-Feedback');
 
-  if (!headers.has('Content-Type')) {
+  // The browser must generate the multipart boundary for FormData uploads.
+  // Setting application/json here would make Multer receive an empty request.
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (!headers.has('Content-Type') && !isFormData) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -404,7 +411,7 @@ async function executeFetchApi<T>(
   isMutation: boolean,
 ): Promise<ApiResponse<T>> {
   const suppressFeedback = new Headers(options.headers).get('X-Nanivet-Suppress-Feedback') === 'true';
-  const headers = buildHeaders(options.headers, token);
+  const headers = buildHeaders(options.headers, token, options.body);
   const method = (options.method || 'GET').toUpperCase();
   let loadingTimer: ReturnType<typeof setTimeout> | null = null;
   let loadingStarted = false;
@@ -434,7 +441,7 @@ async function executeFetchApi<T>(
       
       if (newToken) {
         // Retry the request with the new token
-        const retryHeaders = buildHeaders(options.headers, newToken);
+        const retryHeaders = buildHeaders(options.headers, newToken, options.body);
 
         const retryResponse = await fetch(url, {
           ...options,
@@ -752,6 +759,33 @@ export const api = {
 
   async searchMascotas(query: string): Promise<ApiResponse<unknown[]>> {
     return fetchApi(`${API_BASE}/mascotas/buscar?q=${encodeURIComponent(query)}`);
+  },
+
+  async uploadMascotaProfile(id: string, image: File): Promise<ApiResponse<unknown>> {
+    const body = new FormData();
+    body.append('imagen', image);
+    return fetchApi(`${API_BASE}/media/mascotas/${id}/perfil`, {
+      method: 'POST',
+      headers: { 'X-Nanivet-Suppress-Feedback': 'true' },
+      body,
+    });
+  },
+
+  async uploadMascotaRadiograph(
+    id: string,
+    data: { image: File; fecha: string; descripcion: string; titulo?: string; casoId?: string },
+  ): Promise<ApiResponse<unknown>> {
+    const body = new FormData();
+    body.append('imagen', data.image);
+    body.append('fecha', data.fecha);
+    body.append('descripcion', data.descripcion);
+    if (data.titulo) body.append('titulo', data.titulo);
+    if (data.casoId) body.append('casoId', data.casoId);
+    return fetchApi(`${API_BASE}/media/mascotas/${id}/radiografias`, {
+      method: 'POST',
+      headers: { 'X-Nanivet-Suppress-Feedback': 'true' },
+      body,
+    });
   },
 
   // ===== CITAS =====

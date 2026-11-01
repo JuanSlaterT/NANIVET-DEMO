@@ -76,6 +76,7 @@ export interface Mascota {
   alergias?: string | null;
   microchip?: string | null;
   notas?: string | null;
+  fotoUrl?: string | null;
 }
 
 export interface Cita {
@@ -255,6 +256,8 @@ export interface Examen {
   descripcion: string;
   fecha: string;
   veterinarioId: string;
+  titulo?: string | null;
+  archivoUrl?: string | null;
 }
 
 export interface PesoRegistrado {
