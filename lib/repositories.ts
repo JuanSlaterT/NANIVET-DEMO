@@ -334,23 +334,30 @@ export const CitaRepository = {
 // Helper to transform flat soap fields from backend into nested soap object
 function transformCasoRow(row: any): CasoClinico | undefined {
   if (!row) return undefined;
+  const flatSoap = {
+    subjetivo: row.soap_subjetivo ?? row.soapSubjetivo ?? '',
+    objetivo: row.soap_objetivo ?? row.soapObjetivo ?? '',
+    analisis: row.soap_analisis ?? row.soapAnalisis ?? '',
+    plan: row.soap_plan ?? row.soapPlan ?? '',
+  };
+  const hasFlatSoap = [
+    'soap_subjetivo', 'soapSubjetivo',
+    'soap_objetivo', 'soapObjetivo',
+    'soap_analisis', 'soapAnalisis',
+    'soap_plan', 'soapPlan',
+  ].some(field => Object.prototype.hasOwnProperty.call(row, field));
   const base = {
     id: row.id,
     mascotaId: row.mascota_id || row.mascotaId,
     motivo: row.motivo,
-    soap: {
-      subjetivo: row.soap_subjetivo || '',
-      objetivo: row.soap_objetivo || '',
-      analisis: row.soap_analisis || '',
-      plan: row.soap_plan || '',
-    },
+    soap: flatSoap,
     diagnostico: row.diagnostico,
     estado: row.estado,
-    fecha: row.fecha_hora_inicio || row.fecha || row.fecha_creacion,
+    fecha: row.fecha_hora_inicio || row.fechaHoraInicio || row.fecha || row.fecha_creacion || row.fechaCreacion,
     veterinarioId: row.veterinario_id || row.veterinarioId,
   };
   // If soap is already an object (e.g., from mock data), keep it as-is
-  if (row.soap && typeof row.soap === 'object' && !row.soap_subjetivo) {
+  if (row.soap && typeof row.soap === 'object' && !hasFlatSoap) {
     return { ...base, soap: row.soap };
   }
   return base;
@@ -390,7 +397,7 @@ export const CasoRepository = {
   async update(id: string, data: Partial<CasoClinico>, options?: { silent?: boolean }): Promise<CasoClinico | null> {
     const res = await api.updateCaso(id, data, options?.silent);
     if (res.error) return null;
-    return res.data as CasoClinico;
+    return transformCasoRow(res.data) ?? null;
   },
 
   async delete(id: string): Promise<boolean> {
