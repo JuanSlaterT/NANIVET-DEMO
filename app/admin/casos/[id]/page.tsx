@@ -36,8 +36,10 @@ export default function CasoDetailPage() {
   const [editing, setEditing] = useState(false);
   const [soap, setSoap] = useState({ subjetivo: '', objetivo: '', analisis: '', plan: '' });
   const [nuevoEstado, setNuevoEstado] = useState<string>('');
+  const [activeTab, setActiveTab] = useState('soap');
   const [aiNotas, setAiNotas] = useState('');
   const [aiSoapLoading, setAiSoapLoading] = useState(false);
+  const [aiSoapError, setAiSoapError] = useState<string | null>(null);
   const [aiDifferentials, setAiDifferentials] = useState<{ diagnostico: string; probabilidad: string; descripcion: string; examenes: string[] }[]>([]);
   const [aiDiffLoading, setAiDiffLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -178,16 +180,29 @@ export default function CasoDetailPage() {
   };
 
   const handleAiSOAP = async () => {
-    if (!aiNotas.trim() || !mascota) return;
+    if (!aiNotas.trim() || !mascota || aiSoapLoading) return;
     setAiSoapLoading(true);
-    setSoap({ subjetivo: '', objetivo: '', analisis: '', plan: '' });
-    const response = await convertirNotasASoap(mascota.id, aiNotas);
-    setAiSoapLoading(false);
-    if (response.error) {
-      setSoap({ subjetivo: `Error: ${response.error.message}`, objetivo: '', analisis: '', plan: '' });
-    } else if (response.data) {
+    setAiSoapError(null);
+
+    try {
+      const response = await convertirNotasASoap(mascota.id, aiNotas.trim());
+      if (response.error) {
+        setAiSoapError(response.error.message);
+        return;
+      }
+
+      if (!response.data?.soap) {
+        setAiSoapError('El asistente no devolvió una nota SOAP válida. Intenta nuevamente.');
+        return;
+      }
+
       setSoap(response.data.soap);
       setEditing(true);
+      setActiveTab('soap');
+    } catch (error) {
+      setAiSoapError(error instanceof Error ? error.message : 'No fue posible convertir las notas a SOAP.');
+    } finally {
+      setAiSoapLoading(false);
     }
   };
 
@@ -232,7 +247,7 @@ export default function CasoDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="soap">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="soap">SOAP</TabsTrigger>
           <TabsTrigger value="ai" className="gap-1.5"><Sparkles className="h-3.5 w-3.5" /> Asistente IA</TabsTrigger>
@@ -489,6 +504,12 @@ export default function CasoDetailPage() {
               <Button onClick={handleAiSOAP} disabled={aiSoapLoading || !aiNotas.trim()} className="gap-1.5">
                 <Sparkles className="h-3.5 w-3.5" /> {aiSoapLoading ? 'Procesando...' : 'Convertir a SOAP'}
               </Button>
+              {aiSoapError && (
+                <div role="alert" className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{aiSoapError}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
           <Card>

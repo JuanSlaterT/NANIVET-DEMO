@@ -76,7 +76,10 @@ export async function convertirNotasASoap(
     `${IA_BASE}/notas-a-soap`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Nanivet-Suppress-Loading': 'true',
+      },
       body: JSON.stringify({ mascotaId, notasLibres }),
       signal,
     }

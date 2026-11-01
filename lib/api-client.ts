@@ -365,6 +365,7 @@ function buildHeaders(
 ): Headers {
   const headers = new Headers(headersInit);
   headers.delete('X-Nanivet-Suppress-Feedback');
+  headers.delete('X-Nanivet-Suppress-Loading');
 
   // The browser must generate the multipart boundary for FormData uploads.
   // Setting application/json here would make Multer receive an empty request.
@@ -412,7 +413,9 @@ async function executeFetchApi<T>(
   token: string | null,
   isMutation: boolean,
 ): Promise<ApiResponse<T>> {
-  const suppressFeedback = new Headers(options.headers).get('X-Nanivet-Suppress-Feedback') === 'true';
+  const optionHeaders = new Headers(options.headers);
+  const suppressFeedback = optionHeaders.get('X-Nanivet-Suppress-Feedback') === 'true';
+  const suppressLoading = optionHeaders.get('X-Nanivet-Suppress-Loading') === 'true';
   const headers = buildHeaders(options.headers, token, options.body);
   const method = (options.method || 'GET').toUpperCase();
   let loadingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -420,7 +423,7 @@ async function executeFetchApi<T>(
 
   // Fast mutations should not flash a full-screen overlay. GET requests never
   // activate it because their pages already render their own loading states.
-  if (isMutation && typeof window !== 'undefined') {
+  if (isMutation && !suppressLoading && typeof window !== 'undefined') {
     loadingTimer = setTimeout(() => {
       loadingStarted = true;
       startLoading('Guardando...');
@@ -877,7 +880,10 @@ export const api = {
   async updateCaso(id: string, data: Record<string, unknown>, suppressFeedback = false): Promise<ApiResponse<unknown>> {
     return fetchApi(`${API_BASE}/casos/${id}`, {
       method: 'PUT',
-      headers: suppressFeedback ? { 'X-Nanivet-Suppress-Feedback': 'true' } : undefined,
+      headers: suppressFeedback ? {
+        'X-Nanivet-Suppress-Feedback': 'true',
+        'X-Nanivet-Suppress-Loading': 'true',
+      } : undefined,
       body: JSON.stringify(toSnakeCase(data)),
     });
   },
