@@ -308,14 +308,14 @@ export default function AgendarPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950">
         <div className="animate-pulse text-primary"><PawPrint className="h-12 w-12" /></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950">
+    <div className="min-h-[100dvh] bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950 safe-area-bottom">
       {/* Header */}
       <header className="border-b border-white/5">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -326,7 +326,7 @@ export default function AgendarPage() {
         </div>
       </header>
 
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="max-w-3xl mx-auto px-3 py-5 sm:px-5 sm:py-8">
         {submitted ? (
           <Card className="bg-card/80 backdrop-blur-xl border-teal-500/20">
             <CardContent className="p-8 text-center">
@@ -382,7 +382,7 @@ export default function AgendarPage() {
                   <CardTitle className="flex items-center gap-2"><Stethoscope className="h-5 w-5 text-primary" /> Selecciona el servicio</CardTitle>
                   <CardDescription>¿Qué necesita tu mascota?</CardDescription>
                 </CardHeader>
-                <CardContent className="grid grid-cols-2 gap-3">
+                <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {Object.entries(TIPOS_SERVICIO).map(([k, v]) => (
                     <button
                       key={k}
@@ -394,7 +394,7 @@ export default function AgendarPage() {
                     </button>
                   ))}
                 </CardContent>
-                <div className="p-6 pt-0 flex justify-end">
+                <div className="flex justify-end p-4 pt-0 sm:p-6 sm:pt-0">
                   <Button onClick={next} disabled={!form.servicio} className="gap-2">Siguiente <ChevronRight className="h-4 w-4" /></Button>
                 </div>
               </Card>
@@ -544,7 +544,7 @@ export default function AgendarPage() {
                       {availableSlots.length === 0 ? (
                         <p className="text-sm text-muted-foreground py-4 text-center bg-muted/20 rounded-lg">No hay horarios disponibles para este día</p>
                       ) : (
-                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                           {availableSlots.map(slot => (
                             <button
                               key={slot}
@@ -560,7 +560,7 @@ export default function AgendarPage() {
                     </div>
                   )}
                 </CardContent>
-                <div className="p-6 pt-0 flex justify-between">
+                <div className="flex justify-between gap-3 p-4 pt-0 sm:p-6 sm:pt-0">
                   <Button variant="outline" onClick={back} className="gap-2"><ChevronLeft className="h-4 w-4" /> Atrás</Button>
                   <Button onClick={next} disabled={!form.hora} className="gap-2">Siguiente <ChevronRight className="h-4 w-4" /></Button>
                 </div>
@@ -575,7 +575,7 @@ export default function AgendarPage() {
                   <CardDescription>Información de contacto y de tu mascota</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <Label>Nombre <span className="text-destructive">*</span></Label>
                       <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
@@ -587,7 +587,7 @@ export default function AgendarPage() {
                       {errors.apellido && <p className="text-xs text-destructive">{errors.apellido}</p>}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <Label>Teléfono WhatsApp <span className="text-destructive">*</span></Label>
                       <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} placeholder="0991234567" />
@@ -598,7 +598,7 @@ export default function AgendarPage() {
                       <Input value={form.cedula} onChange={(e) => setForm({ ...form, cedula: e.target.value })} placeholder="Puedes registrarla después" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <Label>Email (opcional)</Label>
                       <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
@@ -610,7 +610,7 @@ export default function AgendarPage() {
                   </div>
                   <div className="pt-2 border-t border-border/30">
                     <p className="text-sm font-medium mb-3">Datos de tu mascota</p>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label>Nombre de mascota <span className="text-destructive">*</span></Label>
                         <Input value={form.mascotaNombre} onChange={(e) => setForm({ ...form, mascotaNombre: e.target.value })} />
@@ -629,7 +629,7 @@ export default function AgendarPage() {
                         </Select>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label>Sexo</Label>
                         <Select value={form.sexo} onValueChange={(v) => setForm({ ...form, sexo: v })}>
@@ -645,7 +645,7 @@ export default function AgendarPage() {
                         <Input value={form.raza} onChange={(e) => setForm({ ...form, raza: e.target.value })} />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label className="flex items-center gap-1">
                           <Weight className="h-3 w-3" />
@@ -688,7 +688,7 @@ export default function AgendarPage() {
                     </div>
                   </div>
                 </CardContent>
-                <div className="p-6 pt-0 flex justify-between">
+                <div className="flex justify-between gap-3 p-4 pt-0 sm:p-6 sm:pt-0">
                   <Button variant="outline" onClick={back} className="gap-2"><ChevronLeft className="h-4 w-4" /> Atrás</Button>
                   <Button onClick={next} className="gap-2">Siguiente <ChevronRight className="h-4 w-4" /></Button>
                 </div>
@@ -757,7 +757,7 @@ export default function AgendarPage() {
                   {hasPricing && (
                     <div className="space-y-3">
                       <Label className="text-base">Método de pago</Label>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <button
                           onClick={() => setForm({ ...form, metodoPago: 'Pago Presencial' })}
                           className={`p-4 rounded-xl border text-left transition-all ${form.metodoPago === 'Pago Presencial' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/40'}`}
@@ -805,7 +805,7 @@ export default function AgendarPage() {
                     </p>
                   </div>
                 </CardContent>
-                <div className="p-6 pt-0 flex justify-between">
+                <div className="flex justify-between gap-3 p-4 pt-0 sm:p-6 sm:pt-0">
                   <Button variant="outline" onClick={back} className="gap-2"><ChevronLeft className="h-4 w-4" /> Atrás</Button>
                 </div>
               </Card>

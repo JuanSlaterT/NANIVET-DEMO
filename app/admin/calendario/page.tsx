@@ -196,12 +196,12 @@ export default function CalendarioPage() {
           <h1 className="text-2xl font-bold tracking-tight">Calendario</h1>
           <p className="text-sm text-muted-foreground mt-1">Citas, vacunas próximas y cirugías</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           {showVetSelector && (
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
               <UserCog className="h-4 w-4 text-muted-foreground" />
               <Select value={selectedVetId ?? 'all'} onValueChange={(val) => setSelectedVetId(val as string | 'all' | null)}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="min-w-0 flex-1 sm:w-[200px]">
                   <SelectValue placeholder="Seleccionar veterinario" />
                 </SelectTrigger>
                 <SelectContent>
@@ -228,14 +228,14 @@ export default function CalendarioPage() {
       <Card>
         <CardContent className="p-4">
           {/* Toolbar */}
-          <div className="flex items-center justify-between mb-4">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
               <Button variant="outline" size="icon" onClick={prevPeriod}><ChevronLeft className="h-4 w-4" /></Button>
               <Button variant="outline" size="icon" onClick={nextPeriod}><ChevronRight className="h-4 w-4" /></Button>
               <Button variant="ghost" size="sm" onClick={goToday}>Hoy</Button>
             </div>
-            <h2 className="text-base font-semibold">{headerLabel}</h2>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <h2 className="text-center text-base font-semibold md:text-left">{headerLabel}</h2>
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground md:justify-end">
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-sky-500" /> Cita</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Vacuna</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Cirugía</span>
@@ -245,7 +245,8 @@ export default function CalendarioPage() {
 
           {/* Month view */}
           {vista === 'mes' && (
-            <div>
+            <div className="touch-scroll -mx-2 overflow-x-auto px-2 pb-2">
+              <div className="min-w-[640px] md:min-w-0">
               <div className="grid grid-cols-7 gap-1 mb-1">
                 {DIAS_SEMANA.map(d => <div key={d} className="text-center text-xs font-medium text-muted-foreground py-2">{d}</div>)}
               </div>
@@ -274,12 +275,14 @@ export default function CalendarioPage() {
                   );
                 })}
               </div>
+              </div>
             </div>
           )}
 
           {/* Week view */}
           {vista === 'semana' && (
-            <div className="grid grid-cols-7 gap-1">
+            <div className="touch-scroll -mx-2 overflow-x-auto px-2 pb-2">
+              <div className="grid min-w-[720px] grid-cols-7 gap-1 md:min-w-0">
               {weekDays.map((d, i) => {
                 const ds = dateStr(d);
                 const events = getEventsForDate(ds);
@@ -302,6 +305,7 @@ export default function CalendarioPage() {
                   </div>
                 );
               })}
+              </div>
             </div>
           )}
 
@@ -332,8 +336,8 @@ export default function CalendarioPage() {
 
       {/* Event detail popup */}
       {selectedEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setSelectedEvent(null)}>
-          <Card className="max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setSelectedEvent(null)}>
+          <Card className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <CardContent className="p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <span className={`w-3 h-3 rounded-full ${selectedEvent.color}`} />

@@ -519,7 +519,7 @@ export default function MascotaDetailPage() {
                     <DialogTitle>{editingTratamiento ? 'Editar Tratamiento' : 'Nuevo Tratamiento'}</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label>Nombre del tratamiento *</Label>
                         <Input value={tratamientoForm.nombre} onChange={(e) => setTratamientoForm({ ...tratamientoForm, nombre: e.target.value })} placeholder="Ej: Meloxicam 1.5mg/ml" />
@@ -537,7 +537,7 @@ export default function MascotaDetailPage() {
                       <Label>Duración</Label>
                       <Input value={tratamientoForm.duracion} onChange={(e) => setTratamientoForm({ ...tratamientoForm, duracion: e.target.value })} placeholder="Ej: 30 días, Continuo, Único" />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label>Veterinario</Label>
                         <Select value={tratamientoForm.veterinarioId} onValueChange={(v) => setTratamientoForm({ ...tratamientoForm, veterinarioId: v })}>
@@ -631,7 +631,7 @@ export default function MascotaDetailPage() {
                             <DialogTitle>{editingMedicacion ? 'Editar Medicación' : 'Nueva Medicación'}</DialogTitle>
                           </DialogHeader>
                           <div className="space-y-3">
-                            <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                               <div className="space-y-1.5">
                                 <Label>Medicamento *</Label>
                                 <Input value={medicacionForm.medicamento} onChange={(e) => setMedicacionForm({ ...medicacionForm, medicamento: e.target.value })} placeholder="Ej: Tramadol 50mg" />

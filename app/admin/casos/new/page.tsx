@@ -73,7 +73,7 @@ export default function NewCasoPage() {
 
       <Card>
         <CardContent className="space-y-4 pt-6">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Mascota <span className="text-destructive">*</span></Label>
               <Controller control={control} name="mascotaId" render={({ field }) => (
@@ -95,7 +95,7 @@ export default function NewCasoPage() {
               {errors.veterinarioId && <p className="text-xs text-destructive">{errors.veterinarioId.message}</p>}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Fecha</Label>
               <Input type="date" {...register('fecha')} />

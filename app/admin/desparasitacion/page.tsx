@@ -303,7 +303,7 @@ export default function DesparasitacionPage() {
                       />
                       {catalogFormErrors.nombre && <p className="text-xs text-destructive">{catalogFormErrors.nombre}</p>}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label htmlFor="catIntervalo">Intervalo (meses) *</Label>
                         <Input

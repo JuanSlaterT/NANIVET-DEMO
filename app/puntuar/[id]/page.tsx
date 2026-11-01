@@ -129,7 +129,7 @@ export default function PuntuarPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950 safe-area-top safe-area-bottom">
         <div className="animate-pulse text-primary">
           <PawPrint className="h-12 w-12" />
         </div>
@@ -139,7 +139,7 @@ export default function PuntuarPage() {
 
   if (error && !cita) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950 safe-area-top safe-area-bottom">
         <Card className="bg-card/80 backdrop-blur-xl border-red-500/20 max-w-md">
           <CardContent className="p-8 text-center">
             <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
@@ -163,7 +163,7 @@ export default function PuntuarPage() {
   // Show already responded state
   if (puntuacion?.respondida) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950 px-4">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950 px-4 safe-area-top safe-area-bottom">
         <Card className="bg-card/80 backdrop-blur-xl border-teal-500/20 max-w-lg w-full">
           <CardContent className="p-8 text-center space-y-6">
             <div className="w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto">
@@ -224,7 +224,7 @@ export default function PuntuarPage() {
 
   // Show rating form
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950 px-4">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-teal-950 via-slate-950 to-cyan-950 px-4 safe-area-top safe-area-bottom">
       <Card className="bg-card/80 backdrop-blur-xl border-teal-500/20 max-w-lg w-full">
         <CardHeader className="text-center space-y-3">
           <div className="w-16 h-16 rounded-full bg-teal-500/20 flex items-center justify-center mx-auto">

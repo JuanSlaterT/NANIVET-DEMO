@@ -198,7 +198,7 @@ export default function StaffPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Users className="h-6 w-6 text-primary" />
@@ -208,7 +208,7 @@ export default function StaffPage() {
             Gestión de usuarios del sistema — veterinarios y recepcionistas
           </p>
         </div>
-        <Button onClick={openNew}>
+        <Button onClick={openNew} className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />
           Nuevo Usuario
         </Button>
@@ -279,16 +279,16 @@ export default function StaffPage() {
 
       {/* Table */}
       <Card>
-        <Table>
+        <Table className="min-w-[620px] xl:min-w-full">
           <TableHeader>
             <TableRow>
               <TableHead>Nombre</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Teléfono</TableHead>
+              <TableHead className="hidden md:table-cell">Email</TableHead>
+              <TableHead className="hidden xl:table-cell">Teléfono</TableHead>
               <TableHead>Rol</TableHead>
-              <TableHead>Especialidad</TableHead>
+              <TableHead className="hidden xl:table-cell">Especialidad</TableHead>
               <TableHead>Estado</TableHead>
-              <TableHead>Fecha Alta</TableHead>
+              <TableHead className="hidden xl:table-cell">Fecha Alta</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
@@ -322,20 +322,20 @@ export default function StaffPage() {
                         <span className="font-medium">{s.nombre}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell">
                       <div className="flex items-center gap-2">
                         <Mail className="h-3.5 w-3.5 text-muted-foreground" />
                         {s.email}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden xl:table-cell">
                       <div className="flex items-center gap-2">
                         <Phone className="h-3.5 w-3.5 text-muted-foreground" />
                         {s.telefono}
                       </div>
                     </TableCell>
                     <TableCell>{getRoleBadge(s.rol)}</TableCell>
-                    <TableCell className="text-muted-foreground">{s.especialidad || '—'}</TableCell>
+                    <TableCell className="hidden text-muted-foreground xl:table-cell">{s.especialidad || '—'}</TableCell>
                     <TableCell>
                       {s.activo ? (
                         <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-400">
@@ -349,7 +349,7 @@ export default function StaffPage() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{s.fechaAlta ? formatDate(s.fechaAlta) : '—'}</TableCell>
+                    <TableCell className="hidden text-muted-foreground xl:table-cell">{s.fechaAlta ? formatDate(s.fechaAlta) : '—'}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Button
@@ -394,7 +394,7 @@ export default function StaffPage() {
             {/* Rol selector */}
             <div>
               <Label>Rol de Usuario *</Label>
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="mt-2 grid grid-cols-2 gap-2">
                 {(['veterinario', 'recepcionista'] as Rol[]).map((rol) => {
                   const RoleIcon = getRoleIcon(rol);
                   return (

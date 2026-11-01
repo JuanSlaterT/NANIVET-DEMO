@@ -11,6 +11,12 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'NANIVET - Clínica Veterinaria en Esmeraldas',
   description: 'Clínica Veterinaria NANIVET - Atención profesional para tu mascota en Esmeraldas, Ecuador. Consulta, cirugía, vacunación, urgencias y más.',
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 5,
+    viewportFit: 'cover',
+  },
 };
 
 export default function RootLayout({

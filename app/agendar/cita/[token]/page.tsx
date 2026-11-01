@@ -116,7 +116,7 @@ export default function PublicCitaPage() {
 
   if (view === 'loading') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4 safe-area-top safe-area-bottom">
         <div className="w-full max-w-lg space-y-4">
           <div className="h-12 w-12 bg-primary/20 rounded-xl animate-pulse mx-auto" />
           <div className="h-32 bg-muted rounded-lg animate-pulse" />
@@ -127,7 +127,7 @@ export default function PublicCitaPage() {
 
   if (view === 'notfound') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4 safe-area-top safe-area-bottom">
         <Card className="w-full max-w-lg">
           <CardContent className="p-8 text-center space-y-4">
             <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto">
@@ -144,7 +144,7 @@ export default function PublicCitaPage() {
 
   if (view === 'confirmed') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4 safe-area-top safe-area-bottom">
         <Card className="w-full max-w-lg">
           <CardContent className="p-8 text-center space-y-4">
             <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto">
@@ -165,7 +165,7 @@ export default function PublicCitaPage() {
 
   if (view === 'cancelled') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4 safe-area-top safe-area-bottom">
         <Card className="w-full max-w-lg">
           <CardContent className="p-8 text-center space-y-4">
             <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto">
@@ -182,7 +182,7 @@ export default function PublicCitaPage() {
 
   if (view === 'rescheduled') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4 safe-area-top safe-area-bottom">
         <Card className="w-full max-w-lg">
           <CardContent className="p-8 text-center space-y-4">
             <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto">
@@ -203,7 +203,7 @@ export default function PublicCitaPage() {
 
   if (view === 'error') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4 safe-area-top safe-area-bottom">
         <Card className="w-full max-w-lg">
           <CardContent className="p-8 text-center space-y-4">
             <div className="w-16 h-16 rounded-full bg-orange-500/10 flex items-center justify-center mx-auto">
@@ -225,7 +225,7 @@ export default function PublicCitaPage() {
   const servicio = cita ? TIPOS_SERVICIO[cita.tipoServicio] : null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-4">
+    <div className="min-h-[100dvh] bg-gradient-to-b from-background to-muted/30 flex items-center justify-center p-3 sm:p-4 safe-area-top safe-area-bottom">
       <div className="w-full max-w-lg space-y-4">
         {/* Header */}
         <div className="flex items-center gap-3 justify-center">

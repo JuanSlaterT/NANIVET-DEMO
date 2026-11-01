@@ -337,7 +337,7 @@ export default function CasoDetailPage() {
                     </div>
                   )}
                   <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label>Nombre del tratamiento *</Label>
                         <Input value={tratamientoForm.nombre} onChange={(e) => setTratamientoForm({ ...tratamientoForm, nombre: e.target.value })} placeholder="Ej: Meloxicam 1.5mg/ml" />

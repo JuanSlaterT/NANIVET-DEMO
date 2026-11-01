@@ -232,7 +232,7 @@ export default function MascotasPage() {
               </Select>
               {errors.clienteId && <p className="text-xs text-destructive">{errors.clienteId}</p>}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Nombre <span className="text-destructive">*</span></Label>
                 <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
@@ -246,7 +246,7 @@ export default function MascotasPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Sexo <span className="text-destructive">*</span></Label>
                 <Select value={form.sexo} onValueChange={(v) => setForm({ ...form, sexo: v })}>
@@ -260,7 +260,7 @@ export default function MascotasPage() {
                 {errors.fechaNacimiento && <p className="text-xs text-destructive">{errors.fechaNacimiento}</p>}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Raza (opcional)</Label>
                 <Input value={form.raza} onChange={(e) => setForm({ ...form, raza: e.target.value })} placeholder="Ej: Labrador" />
@@ -270,7 +270,7 @@ export default function MascotasPage() {
                 <Input value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} placeholder="Ej: Dorado" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Microchip (opcional)</Label>
                 <Input value={form.microchip} onChange={(e) => setForm({ ...form, microchip: e.target.value })} />

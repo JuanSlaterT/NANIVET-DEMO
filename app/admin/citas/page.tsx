@@ -347,7 +347,7 @@ export default function CitasPage() {
               </Select>
               {errors.mascotaId && <p className="text-xs text-destructive">{errors.mascotaId}</p>}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Veterinario <span className="text-destructive">*</span></Label>
                 <Select value={form.veterinarioId} onValueChange={onVeterinarioChange}>
@@ -368,7 +368,7 @@ export default function CitasPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Fecha <span className="text-destructive">*</span></Label>
                 <Input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} />

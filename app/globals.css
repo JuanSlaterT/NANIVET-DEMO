@@ -37,12 +37,28 @@
 }
 
 @layer base {
+  html {
+    min-height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
+    min-height: 100dvh;
+    overflow-x: hidden;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  button,
+  a,
+  input,
+  textarea,
+  [role="button"],
+  [role="tab"],
+  [role="option"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -64,6 +80,46 @@
   }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+  .touch-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-inline: contain;
+  }
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* iPad y otros dispositivos táctiles: objetivos cómodos y sin zoom de Safari. */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"] {
+    min-height: 44px;
+  }
+
+  input,
+  textarea,
+  [role="combobox"] {
+    min-height: 44px;
+    font-size: 16px !important;
+  }
+
+  .cal-event {
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .ipad-content {
+    max-width: 1120px;
   }
 }
 

@@ -226,7 +226,7 @@ export default function ClientesPage() {
             <DialogTitle>{editing ? 'Editar Cliente' : 'Nuevo Cliente'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Nombre <span className="text-destructive">*</span></Label>
                 <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
@@ -238,7 +238,7 @@ export default function ClientesPage() {
                 {errors.apellido && <p className="text-xs text-destructive">{errors.apellido}</p>}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Teléfono WhatsApp <span className="text-destructive">*</span></Label>
                 <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} placeholder="0991234567" />
